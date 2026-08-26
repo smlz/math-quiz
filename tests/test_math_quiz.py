@@ -332,7 +332,8 @@ async def test_full_multiplayer_two_question_game_e2e(client):
 
     correct_index_q1 = 2
     results_q1 = {
-        nicknames["Ada"]: {"option_index": 2, "correct": True, "points_awarded": 10},
+        # Ada is the first (and only) correct answer -> 12 points (SPEC.md §5).
+        nicknames["Ada"]: {"option_index": 2, "correct": True, "points_awarded": 12},
         nicknames["Bo"]: {"option_index": 1, "correct": False, "points_awarded": 0},
         nicknames["Cy"]: {"option_index": None, "correct": False, "points_awarded": 0},
     }
@@ -385,8 +386,9 @@ async def test_full_multiplayer_two_question_game_e2e(client):
 
     correct_index_q2 = 0
     results_q2 = {
-        nicknames["Ada"]: {"option_index": 0, "correct": True, "points_awarded": 10},
-        nicknames["Bo"]: {"option_index": 0, "correct": True, "points_awarded": 10},
+        # Ada answered first, Bo second -> 12 / 11 points (SPEC.md §5).
+        nicknames["Ada"]: {"option_index": 0, "correct": True, "points_awarded": 12},
+        nicknames["Bo"]: {"option_index": 0, "correct": True, "points_awarded": 11},
         nicknames["Cy"]: {"option_index": 3, "correct": False, "points_awarded": 0},
     }
     for player_id, result in results_q2.items():
@@ -406,9 +408,9 @@ async def test_full_multiplayer_two_question_game_e2e(client):
     )
     assert reveal_resp.status_code == 200
 
-    # Ada: 20, Bo: 10, Cy: 0 -- final standings.
-    assert scores[nicknames["Ada"]] == 20
-    assert scores[nicknames["Bo"]] == 10
+    # Ada: 24, Bo: 11, Cy: 0 -- final standings.
+    assert scores[nicknames["Ada"]] == 24
+    assert scores[nicknames["Bo"]] == 11
     assert scores[nicknames["Cy"]] == 0
     final_standings = sorted(
         ({"player_id": pid, "score": s} for pid, s in scores.items()),

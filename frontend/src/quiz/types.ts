@@ -16,8 +16,8 @@ export interface QuestionState {
   correctIndex: number;
   /** Resolved (0, 1) prompt/answer-grid space split (SPEC.md §3.2), default 0.5. */
   answerAreaFraction: number;
-  // Points are a hardcoded 10 per correct answer (SPEC.md §5), not part of
-  // this shape.
+  // Points follow the hardcoded 12/11/10 submission-order ladder (SPEC.md
+  // §5), not part of this shape.
 }
 
 export interface ParsedQuiz {
