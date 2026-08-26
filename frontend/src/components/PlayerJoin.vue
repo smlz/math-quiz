@@ -50,9 +50,9 @@ async function join() {
     <label>
       Nickname
       <input v-model="nickname" :readonly="nicknameReadonly" maxlength="30" placeholder="Dein Name" />
-      <!--button v-if="nicknameReadonly" type="button" class="player-join__change-nickname" @click="nicknameReadonly = false">
+      <button v-if="nicknameReadonly" type="button" class="player-join__change-nickname" @click="nicknameReadonly = false">
         Ändern
-      </button-->
+      </button>
     </label>
     <p v-if="error" class="player-join__error">{{ error }}</p>
     <button type="submit" :disabled="joining">{{ joining ? "Trete bei…" : "Beitreten" }}</button>
