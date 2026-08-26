@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, ref } from "vue";
+import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import {
   advanceSession,
   createSession,
@@ -17,17 +17,14 @@ import type { ParsedQuiz, QuestionState } from "../quiz/types";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
+import ScreenFrame from "./ScreenFrame.vue";
 
 // Correct answers score by submission order: 12 for the first, 11 for the
 // second, 10 for every further one (SPEC.md §5/§6.2). Not configurable.
 const POINTS_BY_CORRECT_RANK = [12, 11];
 const POINTS_PER_CORRECT_ANSWER = 10;
 
-// Written just before opening "#/preview" in a new tab (window.open copies
-// the opener's sessionStorage into the new tab at creation time) - the
-// quiz source is never sent to/stored on the server, so this is the only
-// way to hand it to that page.
-const PREVIEW_STORAGE_KEY = "math-quiz-preview-source";
+const PREVIEW_DEBOUNCE_MS = 300;
 
 type Status = "setup" | "lobby" | "question_active" | "question_reveal" | "leaderboard" | "finished";
 
@@ -38,6 +35,29 @@ const quiz = ref<ParsedQuiz | null>(null);
 // lobby (and its QR code) is shown - the lobby only ever appears once this
 // has confirmed the whole document compiles cleanly.
 const validating = ref(false);
+
+// Separate from `quiz` so a half-typed draft in the editor never disturbs
+// the quiz that was validated for the running session.
+const previewQuiz = ref<ParsedQuiz | null>(null);
+const previewErrors = ref<string[]>([]);
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(
+  quizSource,
+  (source) => {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      try {
+        previewQuiz.value = parseQuiz(source);
+        previewErrors.value = [];
+      } catch (e) {
+        previewQuiz.value = null;
+        previewErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
+      }
+    }, PREVIEW_DEBOUNCE_MS);
+  },
+  { immediate: true },
+);
 
 const pin = ref<string | null>(null);
 const hostPin = ref<string | null>(null);
@@ -170,18 +190,6 @@ async function loadAndCreateSession() {
   status.value = "lobby";
 }
 
-function openPreview() {
-  loadErrors.value = [];
-  try {
-    parseQuiz(quizSource.value);
-  } catch (e) {
-    loadErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
-    return;
-  }
-  sessionStorage.setItem(PREVIEW_STORAGE_KEY, quizSource.value);
-  window.open("#/preview", "_blank");
-}
-
 async function startQuestion(index: number) {
   if (!quiz.value || !hostPin.value) return;
 
@@ -250,25 +258,46 @@ async function nextOrFinish() {
   }
 }
 
-onUnmounted(() => unsubscribe?.());
+onUnmounted(() => {
+  clearTimeout(previewTimer);
+  unsubscribe?.();
+});
 </script>
 
 <template>
   <div class="host-app">
     <template v-if="status === 'setup'">
-      <div class="host-app__panel">
-        <h2>Quiz-Quelltext (Typst)</h2>
-        <textarea v-model="quizSource" rows="20" spellcheck="false"></textarea>
-        <ul v-if="loadErrors.length" class="host-app__errors">
-          <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
-        </ul>
-        <div class="host-app__setup-actions">
-          <button type="button" class="host-app__preview" :disabled="validating" @click="openPreview">
-            Vorschau
-          </button>
+      <div class="host-app__setup">
+        <div class="host-app__editor">
+          <h2>Quiz-Quelltext (Typst)</h2>
+          <textarea v-model="quizSource" spellcheck="false"></textarea>
+          <ul v-if="loadErrors.length" class="host-app__errors">
+            <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
+          </ul>
           <button type="button" class="host-app__submit" :disabled="validating" @click="loadAndCreateSession">
             {{ validating ? "Wird geprüft …" : "Quiz erstellen" }}
           </button>
+        </div>
+
+        <div class="host-app__preview">
+          <h2>Vorschau</h2>
+          <ul v-if="previewErrors.length" class="host-app__errors">
+            <li v-for="issue in previewErrors" :key="issue">{{ issue }}</li>
+          </ul>
+          <template v-else-if="previewQuiz">
+            <section
+              v-for="(question, i) in previewQuiz.questions"
+              :key="question.id"
+              class="host-app__preview-item"
+            >
+              <h3>Frage {{ i + 1 }} von {{ previewQuiz.questions.length }}</h3>
+              <ScreenFrame>
+                <div class="host-app__preview-screen">
+                  <QuestionCard :question="question" :reveal-correct="true" />
+                </div>
+              </ScreenFrame>
+            </section>
+          </template>
         </div>
       </div>
     </template>
@@ -324,17 +353,43 @@ onUnmounted(() => unsubscribe?.());
   display: flex;
   flex-direction: column;
 }
-.host-app__setup-actions {
-  display: flex;
-  gap: 0.75rem;
-  margin-top: auto;
-}
-.host-app__setup-actions .host-app__preview,
-.host-app__setup-actions .host-app__submit {
+.host-app__setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
   flex: 1;
+  min-height: 0;
+}
+.host-app__editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.host-app__submit {
+  margin-top: 0.75rem;
+}
+.host-app__preview {
+  min-height: 0;
+  overflow-y: auto;
+}
+.host-app__preview-item {
+  margin-bottom: 1.5rem;
+}
+/* Mirrors `.host-app`'s own layout so the framed preview matches the real
+   host screen exactly. */
+.host-app__preview-screen {
+  width: 100%;
+  height: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 .host-app textarea {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  resize: none;
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   box-sizing: border-box;

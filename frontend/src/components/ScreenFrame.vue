@@ -39,6 +39,7 @@ onUnmounted(() => observer?.disconnect());
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
+  box-sizing: border-box;
   overflow: hidden;
   border-radius: 8px;
   border: 1px solid var(--border, #333);

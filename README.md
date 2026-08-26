@@ -21,7 +21,7 @@ described in §3.
 | Part | Location | Notes |
 |------|----------|-------|
 | Backend | [api_async.py](api_async.py), [math_quiz.py](math_quiz.py) | FastAPI + SQLAlchemy async. The quiz router is mounted under `/api/math-quiz/v1/`. It is a pure relay: it mints session PINs and fans out events via SSE — it never sees the quiz content or the correct answers. |
-| Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript. Hash routes: `#/join` mounts the player app, `#/preview` the quiz preview, anything else the host app — so any static file server can host it without SPA rewrite rules. All quiz state lives in the host's browser tab. |
+| Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript. Hash routes: `#/join` mounts the player app, anything else the host app — so any static file server can host it without SPA rewrite rules. The host setup screen shows a live side-by-side preview of the quiz. All quiz state lives in the host's browser tab. |
 | Database | SQLite locally (`aiosqlite`), Postgres (`asyncpg`) in production | Only stores session ids/PINs. Configured via the `DATABASE_URL` env var. |
 
 ## Prerequisites
