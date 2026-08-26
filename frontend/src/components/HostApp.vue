@@ -9,8 +9,10 @@ import {
   type PlayerResult,
 } from "../api/mathQuizClient";
 import { QuizParseError } from "../quiz/errors";
+import { OPTION_LABELS } from "../quiz/optionStyle";
 import { parseQuiz } from "../quiz/parseQuiz";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
+import { renderTypst } from "../quiz/typst";
 import type { ParsedQuiz, QuestionState } from "../quiz/types";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
@@ -20,7 +22,7 @@ import QuestionCard from "./QuestionCard.vue";
 // per quiz or question, and not part of QuestionState (SPEC.md §5/§6.2).
 const POINTS_PER_CORRECT_ANSWER = 10;
 
-// Written just before opening "/preview" in a new tab (window.open copies
+// Written just before opening "#/preview" in a new tab (window.open copies
 // the opener's sessionStorage into the new tab at creation time) - the
 // quiz source is never sent to/stored on the server, so this is the only
 // way to hand it to that page.
@@ -31,6 +33,10 @@ type Status = "setup" | "lobby" | "question_active" | "question_reveal" | "leade
 const quizSource = ref(SAMPLE_QUIZ);
 const loadErrors = ref<string[]>([]);
 const quiz = ref<ParsedQuiz | null>(null);
+// True while every prompt/option is being compiled with Typst before the
+// lobby (and its QR code) is shown - the lobby only ever appears once this
+// has confirmed the whole document compiles cleanly.
+const validating = ref(false);
 
 const pin = ref<string | null>(null);
 const hostPin = ref<string | null>(null);
@@ -81,6 +87,33 @@ const standings = computed<LeaderboardEntry[]>(() => {
   });
 });
 
+// Structural parsing alone doesn't catch a Typst syntax/compile error inside
+// a prompt or option body - actually compiling every snippet here is the
+// only way to guarantee the lobby (and its QR code) is never shown for a
+// document that would fail to render mid-game.
+async function compileAllTypstSnippets(parsedQuiz: ParsedQuiz): Promise<string[]> {
+  const checks: Promise<string | null>[] = [];
+  parsedQuiz.questions.forEach((question, qIndex) => {
+    checks.push(
+      renderTypst(question.promptTypst)
+        .then(() => null)
+        .catch((e) => `Frage ${qIndex + 1}, Aufgabenstellung: ${e instanceof Error ? e.message : String(e)}`),
+    );
+    question.options.forEach((option, oIndex) => {
+      checks.push(
+        renderTypst(option.typst)
+          .then(() => null)
+          .catch(
+            (e) =>
+              `Frage ${qIndex + 1}, Option ${OPTION_LABELS[oIndex]}: ${e instanceof Error ? e.message : String(e)}`,
+          ),
+      );
+    });
+  });
+  const results = await Promise.all(checks);
+  return results.filter((r): r is string => r !== null);
+}
+
 async function loadAndCreateSession() {
   loadErrors.value = [];
   try {
@@ -88,6 +121,15 @@ async function loadAndCreateSession() {
   } catch (e) {
     quiz.value = null;
     loadErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
+    return;
+  }
+
+  validating.value = true;
+  const typstErrors = await compileAllTypstSnippets(quiz.value);
+  validating.value = false;
+  if (typstErrors.length) {
+    quiz.value = null;
+    loadErrors.value = typstErrors;
     return;
   }
 
@@ -206,8 +248,12 @@ onUnmounted(() => unsubscribe?.());
           <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
         </ul>
         <div class="host-app__setup-actions">
-          <button type="button" class="host-app__preview" @click="openPreview">Vorschau</button>
-          <button type="button" class="host-app__submit" @click="loadAndCreateSession">Quiz erstellen</button>
+          <button type="button" class="host-app__preview" :disabled="validating" @click="openPreview">
+            Vorschau
+          </button>
+          <button type="button" class="host-app__submit" :disabled="validating" @click="loadAndCreateSession">
+            {{ validating ? "Wird geprüft …" : "Quiz erstellen" }}
+          </button>
         </div>
       </div>
     </template>

@@ -5,7 +5,13 @@ import { defineConfig, devices } from "@playwright/test";
 // vite.config.ts) and drives one host tab + player tabs against them.
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 120_000,
+  // The host setup screen now compiles every prompt/option with Typst
+  // before entering the lobby (SPEC.md §4.1 "preview" gating the QR code) -
+  // in a cold browser context this means fetching typst.ts's WASM
+  // compiler/renderer plus several distinct @preview packages (cetz,
+  // cetz-plot, cetz-venn) fresh over the network, which needs more headroom
+  // than the previous 120s budget.
+  timeout: 240_000,
   fullyParallel: false,
   workers: 1,
   retries: 0,
