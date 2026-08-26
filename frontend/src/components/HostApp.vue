@@ -276,18 +276,14 @@ onUnmounted(() => unsubscribe?.());
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard
-          :standings="standings"
-          :is-last-question="isLastQuestion"
-          :finished="false"
-          @continue="nextOrFinish"
-        />
+        <HostLeaderboard :standings="standings" :finished="false" />
       </div>
+      <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
     </template>
 
     <template v-else-if="status === 'finished'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :is-last-question="true" :finished="true" />
+        <HostLeaderboard :standings="standings" :finished="true" />
       </div>
     </template>
   </div>
