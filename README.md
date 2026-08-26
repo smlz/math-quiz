@@ -1,5 +1,7 @@
 # Math Quiz
 
+[![Test](https://github.com/smlz/math-quiz/actions/workflows/test.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/test.yml)
+
 A Kahoot-style live quiz app for maths lessons. A **host** runs the game on a
 shared screen (projector); **players** join from their own devices with a
 6-digit PIN or by scanning a QR code.
@@ -90,5 +92,8 @@ npm run test:e2e
 
 The Playwright config starts both the backend and the Vite dev server itself,
 using a separate `e2e-test.db`, so no servers need to be running beforehand.
+
+All three suites run automatically on every push and pull request via
+[.github/workflows/test.yml](.github/workflows/test.yml).
 </content>
 </invoke>
