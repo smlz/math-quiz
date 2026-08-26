@@ -1,9 +1,9 @@
 /** Sample quiz used to prefill the standalone preview and host "load quiz"
- * screens, copied from SPEC.md §3.2. */
+ * screens, adapted from SPEC.md §3.2 (prompts in Swiss-standard German). */
 export const SAMPLE_QUIZ = `correct_answer: C
 
 \`\`\`typst
-What is $x$ if $2x + 3 = 11$?
+Wie gross ist $x$, wenn $2x + 3 = 11$?
 \`\`\`
 
 \`\`\`typst-option
@@ -28,7 +28,7 @@ correct_answer: B
 answer_area_fraction: 0.8
 
 \`\`\`typst
-Which graph shows $y = x^2$?
+Welcher Graph zeigt $y = x^2$?
 \`\`\`
 
 \`\`\`typst-option
@@ -82,7 +82,7 @@ correct_answer: A
 answer_area_fraction: 0.7
 
 \`\`\`typst
-Which diagram shows the intersection $A inter B$ (elements in *both* $A$ and $B$)?
+Welches Diagramm zeigt den Durchschnitt $A inter B$?
 \`\`\`
 
 \`\`\`typst-option
