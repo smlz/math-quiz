@@ -9,14 +9,15 @@ const props = defineProps<{
 
 defineEmits<{ start: [] }>();
 
-const origin = location.origin;
-const joinUrl = `${origin}/#/join?pin=${props.pin}`;
+// BASE_URL already has a trailing slash ("/" in dev, "/math-quiz/" on Pages).
+const joinBase = `${location.origin}${import.meta.env.BASE_URL}#/join`;
+const joinUrl = `${joinBase}?pin=${props.pin}`;
 const qrDataUrl = ref("");
 
 watch(
   () => props.pin,
   async (pin) => {
-    qrDataUrl.value = await QRCode.toDataURL(`${origin}/#/join?pin=${pin}`, { width: 220 });
+    qrDataUrl.value = await QRCode.toDataURL(`${joinBase}?pin=${pin}`, { width: 220 });
   },
   { immediate: true },
 );
@@ -24,7 +25,7 @@ watch(
 
 <template>
   <section class="host-lobby">
-    <h2>Beitreten auf {{ origin }}/#/join</h2>
+    <h2>Beitreten auf {{ joinBase }}</h2>
     <p class="host-lobby__pin">{{ pin }}</p>
     <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
     <p class="host-lobby__count">{{ nicknames.length }} Spieler:innen beigetreten</p>
