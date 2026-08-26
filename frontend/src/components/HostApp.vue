@@ -269,7 +269,12 @@ onUnmounted(() => {
     <template v-if="status === 'setup'">
       <div class="host-app__setup">
         <div class="host-app__editor">
-          <h2>Quiz-Quelltext (Typst)</h2>
+          <div class="host-app__editor-header">
+            <h2>Quiz-Quelltext (Typst)</h2>
+            <!-- Hash-only href so it stays correct under the GitHub Pages
+                 subpath (see HostLobby's BASE_URL handling). -->
+            <a class="host-app__docs-link" href="#/docs" target="_blank" rel="noopener">Anleitung: Quiz schreiben ↗</a>
+          </div>
           <textarea v-model="quizSource" spellcheck="false"></textarea>
           <ul v-if="loadErrors.length" class="host-app__errors">
             <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
@@ -364,6 +369,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.host-app__editor-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.host-app__docs-link {
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 .host-app__submit {
   margin-top: 0.75rem;
