@@ -43,10 +43,10 @@ The api should integrate into the existing `api_async.py` under
 
 - Questions are authored ahead of time as static **quiz files**, one file
   per quiz.
-- A quiz file contains an ordered list of questions (see §3.2). Every
-  correct answer is worth a hardcoded 10 points (§5), and each question's
-  prompt/answer-grid space split defaults to an even `0.5` (§3.2,
-  overridable per question) — neither is configurable.
+- A quiz file contains an ordered list of questions (see §3.2). Correct
+  answers are worth a hardcoded 12/11/10 points by submission order (§5),
+  and each question's prompt/answer-grid space split defaults to an even
+  `0.5` (§3.2, overridable per question) — neither is configurable.
 - All question content — the prompt and all four answer options — is
   **Typst** source (see §2), rendered client-side via `typst.ts`. Typst
   covers plain text, inline/block math, and figures (e.g. via the `cetz`
@@ -140,9 +140,9 @@ Which graph shows $y = x^2$?
 - **Options**: exactly 4 plain ` ```typst-option ` fenced blocks (see
   §3.1, no attributes), each one option's Typst source (plain text, math,
   and/or a figure). Options are always displayed to players as 4 buttons
-  labeled **A/B/C/D**, in the order the fenced blocks appear. Points are a
-  hardcoded 10 per correct answer for every question (§5), not
-  configurable, so there is no points override.
+  labeled **A/B/C/D**, in the order the fenced blocks appear. Points follow
+  the hardcoded 12/11/10 submission-order ladder for every question (§5),
+  not configurable, so there is no points override.
 - **`answer_area_fraction`** (optional preface key, default `0.5`) is a
   number in `(0, 1)`: the fraction of the host screen's available space
   given to the 2×2 answer grid, remainder to the prompt. `0.5` splits
@@ -230,9 +230,14 @@ resulting state changes are pushed to all connected clients via SSE.
 
 ## 5. Scoring
 
-- Every correct answer is worth a hardcoded **10 points**; wrong answers
-  score 0. Not configurable per quiz or per question. No timing-based
-  bonus (there is no time limit, §4.1).
+- Correct answers are scored by **submission order** within a question: the
+  first player to answer correctly gets **12 points**, the second **11
+  points**, every further correct answer **10 points**. Wrong answers and
+  non-answers score 0. Not configurable per quiz or per question.
+- The order comes from the `submitted_at` timestamp the server records per
+  answer (§4.2, §12.1); only *correct* answers occupy the 12/11 slots, so a
+  fast wrong answer never costs anyone the bonus. Points beyond the first
+  two correct answers do not decay further (there is no time limit, §4.1).
 - No streak bonus in v1 (can be a future extension).
 - Running total kept in-memory per session; final leaderboard shown at
   `FINISHED`.
@@ -266,7 +271,7 @@ class QuestionState(NamedTuple):
     options: list[AnswerOption]  # always exactly 4 answer options, A-D
     correct_index: int
     answer_area_fraction: float  # resolved (0, 1) prompt/answer-grid split, see §3.2
-    # points are a hardcoded 10 per correct answer, not part of this shape (§5)
+    # points follow the hardcoded 12/11/10 submission-order ladder, not part of this shape (§5)
 
 class AnswerRecord(NamedTuple):
     option_index: int
@@ -387,11 +392,12 @@ there is no separate bearer-token scheme layered on top of them.
   via SymPy) — multiple choice with exactly 4 options is the only supported
   question type (§3.1).
 - Persistent player accounts / cross-session history / streak bonuses.
-- Configurable scoring values (points per correct answer are a hardcoded
-  10, §5).
-- Timing-based scoring bonuses (no per-question time limit; every question
-  awards the same fixed points regardless of how fast a player answers,
-  §5).
+- Configurable scoring values (the 12/11/10 submission-order ladder is
+  hardcoded, §5).
+- Continuous timing-based scoring (points scaling with the exact answer
+  time, Kahoot-style). The only speed component is the fixed 12/11/10
+  bonus for the first two correct answers (§5); there is still no
+  per-question time limit.
 - Horizontal scaling (multi-worker/multi-dyno pub/sub via Redis or Postgres
   LISTEN/NOTIFY).
 
@@ -434,7 +440,10 @@ ambiguous about it:
   submissions per index, without ever knowing which index is correct. That
   tally is what powers the `answer_count_update` event; correctness itself
   is only known to the host (it has the parsed quiz) and is computed
-  client-side when the host reveals the answer.
+  client-side when the host reveals the answer. The `answer_count_update`
+  event also carries the submitting `player_id`, its `option_index` and the
+  server-recorded `submitted_at` timestamp, which is what lets the host
+  rank the correct answers for the 12/11/10 ladder (§5).
 - Per-player correctness/points are therefore also computed **client-side by
   the host**, not the server — the host publishes them as part of the
   `question_revealed` event data, keyed by `player_id`.

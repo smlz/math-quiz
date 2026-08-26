@@ -4,11 +4,8 @@ import type { LeaderboardEntry } from "../api/mathQuizClient";
 
 const props = defineProps<{
   standings: LeaderboardEntry[];
-  isLastQuestion: boolean;
   finished: boolean;
 }>();
-
-defineEmits<{ continue: [] }>();
 
 // Only the top 5 players are shown, regardless of how many joined.
 const topStandings = computed(() => props.standings.slice(0, 5));
@@ -24,9 +21,6 @@ const topStandings = computed(() => props.standings.slice(0, 5));
         <span class="leaderboard__score">{{ entry.score }}</span>
       </li>
     </ol>
-    <button v-if="!props.finished" type="button" class="leaderboard__continue" @click="$emit('continue')">
-      {{ props.isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}
-    </button>
   </section>
 </template>
 
@@ -39,10 +33,6 @@ const topStandings = computed(() => props.standings.slice(0, 5));
   align-items: center;
   justify-content: center;
   text-align: center;
-}
-.leaderboard__continue {
-  width: 100%;
-  margin-top: auto;
 }
 .leaderboard__list {
   width: 100%;

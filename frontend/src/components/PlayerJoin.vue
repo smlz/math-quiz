@@ -6,7 +6,9 @@ const NICKNAME_STORAGE_KEY = "math-quiz-nickname";
 
 const params = new URLSearchParams(location.hash.split("?")[1] ?? "");
 const pin = ref(params.get("pin") ?? "");
-const nickname = ref(localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "");
+const storedNickname = localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "";
+const nickname = ref(storedNickname);
+const nicknameReadonly = ref(!!storedNickname);
 const error = ref("");
 const joining = ref(false);
 
@@ -47,7 +49,10 @@ async function join() {
     </label>
     <label>
       Nickname
-      <input v-model="nickname" maxlength="30" placeholder="Dein Name" />
+      <input v-model="nickname" :readonly="nicknameReadonly" maxlength="30" placeholder="Dein Name" />
+      <button v-if="nicknameReadonly" type="button" class="player-join__change-nickname" @click="nicknameReadonly = false">
+        Ändern
+      </button>
     </label>
     <p v-if="error" class="player-join__error">{{ error }}</p>
     <button type="submit" :disabled="joining">{{ joining ? "Trete bei…" : "Beitreten" }}</button>
@@ -74,5 +79,15 @@ async function join() {
 }
 .player-join__error {
   color: #b00020;
+}
+.player-join__change-nickname {
+  justify-self: start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #1368ce;
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: 400;
 }
 </style>
