@@ -83,6 +83,14 @@ p {
   margin: 0;
 }
 
+/* Touch-friendly hit area for both host and player views. */
+button {
+  min-height: 3rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
 code,
 .counter {
   font-family: var(--mono);

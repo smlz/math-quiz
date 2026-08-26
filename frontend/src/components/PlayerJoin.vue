@@ -85,6 +85,7 @@ async function join() {
   background: none;
   border: none;
   padding: 0;
+  min-height: 0;
   font-size: x-small;
   text-decoration: underline;
   cursor: pointer;
