@@ -3,9 +3,9 @@
 [![Test](https://github.com/smlz/math-quiz/actions/workflows/test.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/test.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-A Kahoot-style live quiz app for maths lessons. A **host** runs the game on a
-shared screen (projector); **players** join from their own devices with a
-6-digit PIN or by scanning a QR code.
+A live quiz app for maths lessons. A **host** runs the game on a shared screen
+(projector); **players** join from their own devices with a 6-digit PIN or by
+scanning a QR code.
 
 Question prompts and answer options are authored as **Typst** source and
 compiled to SVG in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
@@ -15,6 +15,9 @@ itself is read off the host screen.
 
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
 described in §3.
+
+The app is vibe coded. The backend is quite rough, and I am surprised it works
+at all. Use at your own risk!
 
 ## Architecture
 
@@ -102,5 +105,3 @@ GitHub Actions dependencies, which then run through the same CI checks.
 ## License
 
 GPLv3 — see [LICENSE](LICENSE).
-</content>
-</invoke>

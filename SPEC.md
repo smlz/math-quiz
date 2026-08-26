@@ -1,6 +1,6 @@
 # Math Quiz — Specification
 
-A Kahoot-style live math quiz application. A **host** runs a game on a shared
+A live math quiz application. A **host** runs a game on a shared
 screen (e.g. projector); **players** join from their own devices using a PIN
 or QR code and answer questions in real time.
 
@@ -14,9 +14,8 @@ or QR code and answer questions in real time.
 - The player's own device shows **only four plain colored A/B/C/D
   buttons** — no question prompt or answer text/content is ever rendered
   there; the question and options are read off the shared host screen
-  (classic Kahoot second-screen pattern). Tapping a button submits
-  immediately and disables all four — a player's choice is final, with no
-  way to change it.
+  (second-screen pattern). Tapping a button submits immediately and disables
+  all four — a player's choice is final, with no way to change it.
 - The host manually advances through questions; players answer on their own
   device with no fixed time limit — the host reveals the answer manually
   when ready.
@@ -353,8 +352,8 @@ there is no separate bearer-token scheme layered on top of them.
   4 buttons arranged in a fixed **2×2 grid**, always labeled **A**
   (top-left), **B** (top-right), **C** (bottom-left), **D** (bottom-right).
   Each label has a fixed, distinct color regardless of question content,
-  matching the classic Kahoot-style scheme so players learn the layout once
-  and never need to re-read labels under time pressure:
+  so players learn the layout once and never need to re-read labels under
+  time pressure:
   | Label | Color              | Hex       |
   |-------|--------------------|-----------|
   | A     | raspberry red      | `#EF476F` |
@@ -394,10 +393,9 @@ there is no separate bearer-token scheme layered on top of them.
 - Persistent player accounts / cross-session history / streak bonuses.
 - Configurable scoring values (the 12/11/10 submission-order ladder is
   hardcoded, §5).
-- Continuous timing-based scoring (points scaling with the exact answer
-  time, Kahoot-style). The only speed component is the fixed 12/11/10
-  bonus for the first two correct answers (§5); there is still no
-  per-question time limit.
+- Continuous timing-based scoring (points scaling with the exact answer time).
+  The only speed component is the fixed 12/11/10 bonus for the first two
+  correct answers (§5); there is still no per-question time limit.
 - Horizontal scaling (multi-worker/multi-dyno pub/sub via Redis or Postgres
   LISTEN/NOTIFY).
 

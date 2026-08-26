@@ -1,7 +1,7 @@
 [project]
 name = "math-quiz"
 version = "0.1.0"
-description = "Kahoot-style live math quiz backend"
+description = "Live math quiz backend"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
