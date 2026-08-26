@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
-import { submitAnswer, subscribeToSession, type LeaderboardEntry } from "../api/mathQuizClient";
+import {
+  fetchSessionState,
+  submitAnswer,
+  subscribeToSession,
+  type LeaderboardEntry,
+  type SessionEvent,
+} from "../api/mathQuizClient";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
 
 type Status = "join" | "lobby" | "question_active" | "question_reveal" | "leaderboard" | "finished";
+
+const RESYNC_INTERVAL_MS = 5000;
+const RECONNECT_DELAY_MS = 3000;
 
 const status = ref<Status>("join");
 const pin = ref<string | null>(null);
@@ -20,6 +29,8 @@ const myScore = ref(0);
 const standings = ref<LeaderboardEntry[]>([]);
 
 let unsubscribe: (() => void) | null = null;
+let resyncTimer: number | null = null;
+let reconnectTimer: number | null = null;
 
 const myRank = computed(() => {
   const entry = standings.value.find((e) => e.player_id === playerId.value);
@@ -34,45 +45,108 @@ const topStandings = computed(() => standings.value.slice(0, 5));
 // matching the host's button-anchored-to-bottom layout).
 const isCenteredState = computed(() => status.value === "lobby" || status.value === "finished");
 
+function handleEvent(event: SessionEvent) {
+  switch (event.type) {
+    case "question_started":
+      startQuestion(event.data.question_index);
+      break;
+    case "question_revealed": {
+      const result = event.data.results[playerId.value!];
+      if (result) {
+        lastResult.value = { correct: result.correct, pointsAwarded: result.points_awarded };
+        myScore.value += result.points_awarded;
+      }
+      revealCorrectIndex.value = event.data.correct_index;
+      status.value = "question_reveal";
+      break;
+    }
+    case "leaderboard_updated":
+      standings.value = event.data.standings;
+      status.value = "leaderboard";
+      break;
+    case "session_finished":
+      status.value = "finished";
+      teardown();
+      break;
+    default:
+      // player_joined / answer_count_update are host-facing bookkeeping only.
+      break;
+  }
+}
+
+function startQuestion(questionIndex: number) {
+  currentQuestionIndex.value = questionIndex;
+  selectedIndex.value = null;
+  lastResult.value = null;
+  revealCorrectIndex.value = null;
+  status.value = "question_active";
+}
+
+function connect(joinedPin: string) {
+  unsubscribe = subscribeToSession(joinedPin, handleEvent, (event) => {
+    const source = event.target as EventSource | null;
+    // A fatal error (e.g. a 404 from a backend process that doesn't know this
+    // session) closes the stream for good -- the browser never retries it.
+    if (source?.readyState === EventSource.CLOSED && status.value !== "finished") {
+      unsubscribe?.();
+      unsubscribe = null;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        if (!unsubscribe && status.value !== "finished") connect(joinedPin);
+      }, RECONNECT_DELAY_MS);
+    }
+    void resyncFromServer();
+  });
+}
+
+/**
+ * Recovers from a missed `question_started` event. The SSE stream is the only
+ * thing that drives this screen, and it can silently miss events (phone locked
+ * during the lobby, network switch, buffering proxy) with no `Last-Event-ID`
+ * to replay from -- which would otherwise strand the player on the waiting
+ * screen for the rest of the quiz.
+ */
+async function resyncFromServer() {
+  if (!pin.value || status.value === "join" || status.value === "finished") return;
+  try {
+    const snapshot = await fetchSessionState(pin.value);
+    const serverIndex = snapshot.current_question_index;
+    if (serverIndex === null) return;
+    if (currentQuestionIndex.value === null || serverIndex > currentQuestionIndex.value) {
+      startQuestion(serverIndex);
+    }
+  } catch (e) {
+    console.warn("Session state resync failed", e);
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") void resyncFromServer();
+}
+
+function teardown() {
+  unsubscribe?.();
+  unsubscribe = null;
+  if (resyncTimer !== null) {
+    clearInterval(resyncTimer);
+    resyncTimer = null;
+  }
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+}
+
 function onJoined(joinedPin: string, joinedPlayerId: string, joinedNickname: string) {
   pin.value = joinedPin;
   playerId.value = joinedPlayerId;
   nickname.value = joinedNickname;
   status.value = "lobby";
 
-  unsubscribe = subscribeToSession(joinedPin, (event) => {
-    switch (event.type) {
-      case "question_started":
-        currentQuestionIndex.value = event.data.question_index;
-        selectedIndex.value = null;
-        lastResult.value = null;
-        revealCorrectIndex.value = null;
-        status.value = "question_active";
-        break;
-      case "question_revealed": {
-        const result = event.data.results[playerId.value!];
-        if (result) {
-          lastResult.value = { correct: result.correct, pointsAwarded: result.points_awarded };
-          myScore.value += result.points_awarded;
-        }
-        revealCorrectIndex.value = event.data.correct_index;
-        status.value = "question_reveal";
-        break;
-      }
-      case "leaderboard_updated":
-        standings.value = event.data.standings;
-        status.value = "leaderboard";
-        break;
-      case "session_finished":
-        status.value = "finished";
-        unsubscribe?.();
-        unsubscribe = null;
-        break;
-      default:
-        // player_joined / answer_count_update are host-facing bookkeeping only.
-        break;
-    }
-  });
+  connect(joinedPin);
+  resyncTimer = window.setInterval(() => void resyncFromServer(), RESYNC_INTERVAL_MS);
+  document.addEventListener("visibilitychange", onVisibilityChange);
 }
 
 async function answer(optionIndex: number) {
@@ -85,7 +159,7 @@ async function answer(optionIndex: number) {
   }
 }
 
-onUnmounted(() => unsubscribe?.());
+onUnmounted(teardown);
 </script>
 
 <template>
