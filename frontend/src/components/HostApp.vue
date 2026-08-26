@@ -18,8 +18,9 @@ import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
 
-// Every correct answer is worth a hardcoded 10 points; not configurable
-// per quiz or question, and not part of QuestionState (SPEC.md §5/§6.2).
+// Correct answers score by submission order: 12 for the first, 11 for the
+// second, 10 for every further one (SPEC.md §5/§6.2). Not configurable.
+const POINTS_BY_CORRECT_RANK = [12, 11];
 const POINTS_PER_CORRECT_ANSWER = 10;
 
 // Written just before opening "#/preview" in a new tab (window.open copies
@@ -49,7 +50,7 @@ const currentQuestionIndex = ref(-1);
 const tally = ref<Record<number, number>>({});
 // Reactive: its size drives the live "N of M answered" button label (SPEC.md §8),
 // not just read synchronously inside `reveal()`.
-const answersForCurrentQuestion = reactive(new Map<string, { optionIndex: number }>());
+const answersForCurrentQuestion = reactive(new Map<string, { optionIndex: number; submittedAt: number }>());
 
 let unsubscribe: (() => void) | null = null;
 
@@ -145,7 +146,10 @@ async function loadAndCreateSession() {
         break;
       case "answer_count_update":
         tally.value = event.data.counts;
-        answersForCurrentQuestion.set(event.data.player_id, { optionIndex: event.data.option_index });
+        answersForCurrentQuestion.set(event.data.player_id, {
+          optionIndex: event.data.option_index,
+          submittedAt: Date.parse(event.data.submitted_at),
+        });
         break;
       default:
         // question_started/question_revealed/leaderboard_updated/session_finished
@@ -196,6 +200,14 @@ async function reveal() {
   status.value = "question_reveal";
   const q = quiz.value.questions[currentQuestionIndex.value];
 
+  // Only correct answers occupy the 12/11 slots (§5); Array.sort is stable,
+  // so answers sharing a timestamp keep the order they arrived in.
+  const correctRank = new Map<string, number>();
+  [...answersForCurrentQuestion.entries()]
+    .filter(([, answer]) => answer.optionIndex === q.correctIndex)
+    .sort((a, b) => a[1].submittedAt - b[1].submittedAt)
+    .forEach(([playerId], i) => correctRank.set(playerId, i));
+
   const results: Record<string, PlayerResult> = {};
   for (const playerId of roster.keys()) {
     const answer = answersForCurrentQuestion.get(playerId);
@@ -203,8 +215,11 @@ async function reveal() {
       results[playerId] = { option_index: null, correct: false, points_awarded: 0 };
       continue;
     }
-    const correct = answer.optionIndex === q.correctIndex;
-    const pointsAwarded = correct ? POINTS_PER_CORRECT_ANSWER : 0;
+    const rank = correctRank.get(playerId);
+    const correct = rank !== undefined;
+    const pointsAwarded = correct
+      ? (POINTS_BY_CORRECT_RANK[rank] ?? POINTS_PER_CORRECT_ANSWER)
+      : 0;
     results[playerId] = { option_index: answer.optionIndex, correct, points_awarded: pointsAwarded };
     scores.set(playerId, (scores.get(playerId) ?? 0) + pointsAwarded);
   }
@@ -276,18 +291,14 @@ onUnmounted(() => unsubscribe?.());
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard
-          :standings="standings"
-          :is-last-question="isLastQuestion"
-          :finished="false"
-          @continue="nextOrFinish"
-        />
+        <HostLeaderboard :standings="standings" :finished="false" />
       </div>
+      <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
     </template>
 
     <template v-else-if="status === 'finished'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :is-last-question="true" :finished="true" />
+        <HostLeaderboard :standings="standings" :finished="true" />
       </div>
     </template>
   </div>

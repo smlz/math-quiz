@@ -49,7 +49,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+10 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
   await expect(ada.locator(".player-answer-grid__mark--correct")).toBeVisible();
   await expect(bo.locator(".player-app__reveal-wrong")).toContainText("+0 Punkte");
   await expect(bo.locator(".player-answer-grid__mark--wrong")).toBeVisible();
@@ -57,19 +57,19 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   await expect(host.getByRole("heading", { name: "Rangliste" })).toBeVisible();
   await expect(host.locator(".leaderboard__row").first()).toContainText("Ada");
-  await expect(host.locator(".leaderboard__row").first()).toContainText("10");
+  await expect(host.locator(".leaderboard__row").first()).toContainText("12");
 
   await host.getByRole("button", { name: "Nächste Frage" }).click();
 
-  // --- Question 2: both Ada and Bo pick the correct option (B). ---
+  // --- Question 2: both Ada and Bo pick the correct option (B), Ada first. ---
   await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
   await answerOption(ada, 1);
   await answerOption(bo, 1);
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+10 Punkte");
-  await expect(bo.locator(".player-app__reveal-correct")).toContainText("+10 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(bo.locator(".player-app__reveal-correct")).toContainText("+11 Punkte");
 
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   await expect(host.getByRole("button", { name: "Nächste Frage" })).toBeVisible();
@@ -82,7 +82,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+10 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
   await expect(bo.locator(".player-app__reveal-wrong")).toContainText("+0 Punkte");
 
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
@@ -91,15 +91,15 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   const rows = host.locator(".leaderboard__row");
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Ada");
-  await expect(rows.first()).toContainText("30");
+  await expect(rows.first()).toContainText("36");
   await expect(rows.nth(1)).toContainText("Bo");
-  await expect(rows.nth(1)).toContainText("10");
+  await expect(rows.nth(1)).toContainText("11");
 
   await host.getByRole("button", { name: "Quiz beenden" }).click();
   await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
   await expect(ada.getByRole("heading", { name: "Quiz beendet!" })).toBeVisible();
-  await expect(ada.getByText("Du hast auf Platz 1 mit 30 Punkten abgeschlossen")).toBeVisible();
-  await expect(bo.getByText("Du hast auf Platz 2 mit 10 Punkten abgeschlossen")).toBeVisible();
+  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
+  await expect(bo.getByText("Du hast auf Platz 2 mit 11 Punkten abgeschlossen")).toBeVisible();
 
   await hostContext.close();
   await adaContext.close();

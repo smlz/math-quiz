@@ -1,6 +1,7 @@
 # Math Quiz
 
 [![Test](https://github.com/smlz/math-quiz/actions/workflows/test.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/test.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 A Kahoot-style live quiz app for maths lessons. A **host** runs the game on a
 shared screen (projector); **players** join from their own devices with a
@@ -97,5 +98,9 @@ All three suites run automatically on every push and pull request via
 [.github/workflows/test.yml](.github/workflows/test.yml). [Dependabot](.github/dependabot.yml)
 opens a pull request weekly for outdated backend (uv), frontend (npm) and
 GitHub Actions dependencies, which then run through the same CI checks.
+
+## License
+
+GPLv3 — see [LICENSE](LICENSE).
 </content>
 </invoke>
