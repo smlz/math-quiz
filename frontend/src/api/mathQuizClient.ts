@@ -3,12 +3,27 @@
 // typing here (`QuestionState`, ...) exists purely for the host app's own
 // client-side bookkeeping, not because the server validates it.
 
-const API_BASE = "https://messenger-api-26-a2f528d8ba18.herokuapp.com/api/math-quiz/v1";
+// In dev (and therefore in the Playwright e2e run) go through Vite's `/api`
+// proxy to the local uvicorn backend; the production build is served from
+// GitHub Pages, which has no backend of its own, so it targets Heroku
+// directly (CORS is open, see api_async.py).
+const API_BASE = import.meta.env.DEV
+  ? "/api/math-quiz/v1"
+  : "https://messenger-api-26-a2f528d8ba18.herokuapp.com/api/math-quiz/v1";
 
-async function postJson<T>(url: string, body?: unknown): Promise<T> {
+/** Who is making the call. Tokens travel in a header, never in the URL. */
+export type SessionAuth = { hostToken: string } | { playerToken: string };
+
+function authHeaders(auth: SessionAuth): Record<string, string> {
+  return "hostToken" in auth
+    ? { "X-Host-Token": auth.hostToken }
+    : { "X-Player-Token": auth.playerToken };
+}
+
+async function postJson<T>(url: string, body?: unknown, auth?: SessionAuth): Promise<T> {
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(auth ? authHeaders(auth) : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!resp.ok) {
@@ -20,7 +35,7 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
 
 export interface CreateSessionResponse {
   pin: string;
-  host_pin: string;
+  host_token: string;
 }
 
 // The quiz source is never sent to the server (SPEC.md §1/§12.1) -- the
@@ -29,40 +44,67 @@ export function createSession(): Promise<CreateSessionResponse> {
   return postJson(`${API_BASE}/sessions`);
 }
 
+export interface SubmittedAnswer {
+  question_index: number;
+  option_index: number;
+}
+
 export interface JoinResponse {
   player_id: string;
+  // Reconnect credential: unlike `player_id` (which every SSE subscriber
+  // sees), this is only ever returned to its owner.
+  player_token: string;
+  nickname: string;
+  reconnected: boolean;
+  current_question_index: number | null;
+  submitted_answer: SubmittedAnswer | null;
 }
 
-export function joinSession(pin: string, nickname: string): Promise<JoinResponse> {
-  return postJson(`${API_BASE}/sessions/${pin}/join`, { nickname });
+export function joinSession(pin: string, nickname: string, playerToken?: string): Promise<JoinResponse> {
+  return postJson(`${API_BASE}/sessions/${pin}/join`, {
+    nickname,
+    player_token: playerToken ?? null,
+  });
 }
 
-export function advanceSession(hostPin: string, eventType: string, data: unknown): Promise<{ ok: boolean }> {
-  return postJson(`${API_BASE}/sessions/${hostPin}/advance`, { event_type: eventType, data });
+export function advanceSession(
+  pin: string,
+  hostToken: string,
+  eventType: string,
+  data: unknown,
+): Promise<{ ok: boolean }> {
+  return postJson(
+    `${API_BASE}/sessions/${pin}/advance`,
+    { event_type: eventType, data },
+    { hostToken },
+  );
 }
 
+// The answering player is identified by their token, not by anything in the
+// body, so nobody can submit an answer on someone else's behalf.
 export function submitAnswer(
   pin: string,
-  playerId: string,
+  playerToken: string,
   questionIndex: number,
   optionIndex: number,
 ): Promise<{ ok: boolean }> {
-  return postJson(`${API_BASE}/sessions/${pin}/answers`, {
-    player_id: playerId,
-    question_index: questionIndex,
-    option_index: optionIndex,
-  });
+  return postJson(
+    `${API_BASE}/sessions/${pin}/answers`,
+    { question_index: questionIndex, option_index: optionIndex },
+    { playerToken },
+  );
 }
 
 export interface SessionStateSnapshot {
   pin: string;
   players: { player_id: string; nickname: string }[];
   current_question_index: number | null;
-  tally: Record<string, number>;
+  tally: Record<number, number>;
+  answers: Record<string, { option_index: number; submitted_at: string }>;
 }
 
-export async function fetchSessionState(pin: string): Promise<SessionStateSnapshot> {
-  const resp = await fetch(`${API_BASE}/sessions/${pin}/state`);
+export async function fetchSessionState(pin: string, auth: SessionAuth): Promise<SessionStateSnapshot> {
+  const resp = await fetch(`${API_BASE}/sessions/${pin}/state`, { headers: authHeaders(auth) });
   if (!resp.ok) {
     throw new Error(`Failed to fetch session state (${resp.status})`);
   }

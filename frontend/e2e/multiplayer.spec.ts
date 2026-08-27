@@ -105,3 +105,69 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await adaContext.close();
   await boContext.close();
 });
+
+test("host and player recover from a reload mid-quiz", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const adaContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const ada = await adaContext.newPage();
+
+  await host.goto("/");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = await host.locator(".host-lobby__pin").textContent();
+
+  await ada.goto(`/#/join?pin=${pin}`);
+  await ada.getByLabel("Nickname").fill("Ada");
+  await ada.getByRole("button", { name: "Beitreten" }).click();
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+
+  // --- Host reload: the quiz source and scores only exist in this browser. ---
+  await host.reload();
+  await expect(host.getByRole("heading", { name: "Rangliste" })).toBeVisible();
+  await expect(host.locator(".leaderboard__row").first()).toContainText("12");
+  await host.getByRole("button", { name: "Nächste Frage" }).click();
+
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  await answerOption(ada, 1);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort abgeschickt");
+
+  // --- Player reload: same identity, same score, answer still locked in. ---
+  await ada.reload();
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort abgeschickt");
+  await expect(ada.locator(".player-app__nickname")).toHaveText("Ada");
+
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__total-score")).toContainText("24");
+
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+  // The reconnect must not have added a second "Ada" to the roster.
+  await expect(host.locator(".leaderboard__row")).toHaveCount(1);
+
+  await host.getByRole("button", { name: "Nächste Frage" }).click();
+  await answerOption(ada, 0);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+  await host.getByRole("button", { name: "Quiz beenden" }).click();
+
+  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
+  // Ada sees the SSE event before the host's own `advance` call returns, so
+  // wait for the host's final screen too -- it renders only after the host
+  // has dropped its stored session.
+  await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
+
+  // Finishing the quiz must drop both stored credentials.
+  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
+  expect(
+    await ada.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("math-quiz-player:"))),
+  ).toEqual([]);
+
+  await hostContext.close();
+  await adaContext.close();
+});

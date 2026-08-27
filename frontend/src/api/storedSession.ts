@@ -1,0 +1,74 @@
+// Per-quiz session persistence in localStorage, so losing the connection (or
+// simply reloading the page) resumes the same identity instead of creating a
+// second player / abandoning a running quiz.
+//
+// Entries live for exactly as long as the quiz does: they are written on join
+// and removed on `session_finished`. There is deliberately no TTL -- a quiz
+// that is never finished keeps its entry so a player can come back to it
+// hours later.
+
+const PLAYER_KEY_PREFIX = "math-quiz-player:";
+const HOST_KEY = "math-quiz-host";
+
+export interface StoredPlayerSession {
+  pin: string;
+  playerId: string;
+  playerToken: string;
+  nickname: string;
+  score: number;
+}
+
+export interface StoredHostSession {
+  pin: string;
+  hostToken: string;
+  quizSource: string;
+  status: string;
+  currentQuestionIndex: number;
+  roster: [string, string][];
+  scores: [string, number][];
+  tally: Record<number, number>;
+}
+
+function read<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? null : (JSON.parse(raw) as T);
+  } catch {
+    // Corrupt/unparsable entry is indistinguishable from no entry here.
+    localStorage.removeItem(key);
+    return null;
+  }
+}
+
+function write(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // Private-mode/quota failures must never break the running quiz.
+    console.warn("Could not persist session", e);
+  }
+}
+
+export function loadPlayerSession(pin: string): StoredPlayerSession | null {
+  return read<StoredPlayerSession>(PLAYER_KEY_PREFIX + pin);
+}
+
+export function savePlayerSession(session: StoredPlayerSession): void {
+  write(PLAYER_KEY_PREFIX + session.pin, session);
+}
+
+export function clearPlayerSession(pin: string): void {
+  localStorage.removeItem(PLAYER_KEY_PREFIX + pin);
+}
+
+export function loadHostSession(): StoredHostSession | null {
+  return read<StoredHostSession>(HOST_KEY);
+}
+
+export function saveHostSession(session: StoredHostSession): void {
+  write(HOST_KEY, session);
+}
+
+export function clearHostSession(): void {
+  localStorage.removeItem(HOST_KEY);
+}

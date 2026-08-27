@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import {
   advanceSession,
   createSession,
@@ -8,6 +8,7 @@ import {
   type LeaderboardEntry,
   type PlayerResult,
 } from "../api/mathQuizClient";
+import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { parseQuiz } from "../quiz/parseQuiz";
@@ -60,7 +61,7 @@ watch(
 );
 
 const pin = ref<string | null>(null);
-const hostPin = ref<string | null>(null);
+const hostToken = ref<string | null>(null);
 const status = ref<Status>("setup");
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
@@ -156,9 +157,19 @@ async function loadAndCreateSession() {
 
   const created = await createSession();
   pin.value = created.pin;
-  hostPin.value = created.host_pin;
+  hostToken.value = created.host_token;
 
-  unsubscribe = subscribeToSession(created.pin, (event) => {
+  connect(created.pin);
+
+  // Seed the roster in case a player joined between session creation and
+  // the SSE subscription above being established.
+  await syncFromServer(created.pin, created.host_token);
+
+  status.value = "lobby";
+}
+
+function connect(sessionPin: string) {
+  unsubscribe = subscribeToSession(sessionPin, (event) => {
     switch (event.type) {
       case "player_joined":
         roster.set(event.data.player_id, event.data.nickname);
@@ -178,20 +189,92 @@ async function loadAndCreateSession() {
         break;
     }
   });
+}
 
-  // Seed the roster in case a player joined between session creation and
-  // the SSE subscription above being established.
-  const snapshot = await fetchSessionState(created.pin);
+/** Pulls the roster and the current question's answers back from the relay --
+ * both to close the join-before-subscribe race on a fresh session, and to
+ * rebuild the answer map (needed for scoring) after a host reload. */
+async function syncFromServer(sessionPin: string, token: string) {
+  const snapshot = await fetchSessionState(sessionPin, { hostToken: token });
   for (const player of snapshot.players) {
     roster.set(player.player_id, player.nickname);
     if (!scores.has(player.player_id)) scores.set(player.player_id, 0);
   }
-
-  status.value = "lobby";
+  tally.value = snapshot.tally;
+  for (const [playerId, answer] of Object.entries(snapshot.answers)) {
+    answersForCurrentQuestion.set(playerId, {
+      optionIndex: answer.option_index,
+      submittedAt: Date.parse(answer.submitted_at),
+    });
+  }
 }
 
+// A running quiz only exists in this browser (the server never sees the quiz
+// source), so everything needed to carry on after a reload is mirrored to
+// localStorage until the quiz is finished.
+function persistSession() {
+  if (!pin.value || !hostToken.value || status.value === "setup" || status.value === "finished") return;
+  saveHostSession({
+    pin: pin.value,
+    hostToken: hostToken.value,
+    quizSource: quizSource.value,
+    status: status.value,
+    currentQuestionIndex: currentQuestionIndex.value,
+    roster: [...roster],
+    scores: [...scores],
+    tally: tally.value,
+  });
+}
+
+watch(
+  () => [pin.value, hostToken.value, status.value, currentQuestionIndex.value, tally.value, [...roster], [...scores]],
+  persistSession,
+  { deep: true },
+);
+
+// Restored synchronously so a reload never flashes the setup screen; the
+// quiz source itself is re-parsed rather than re-validated with Typst, since
+// it already compiled cleanly when the session was created.
+const restored = loadHostSession();
+if (restored?.hostToken) {
+  try {
+    quiz.value = parseQuiz(restored.quizSource);
+    quizSource.value = restored.quizSource;
+    pin.value = restored.pin;
+    hostToken.value = restored.hostToken;
+    currentQuestionIndex.value = restored.currentQuestionIndex;
+    tally.value = restored.tally;
+    for (const [playerId, nickname] of restored.roster) roster.set(playerId, nickname);
+    for (const [playerId, score] of restored.scores) scores.set(playerId, score);
+    status.value = restored.status as Status;
+  } catch {
+    quiz.value = null;
+    clearHostSession();
+  }
+} else if (restored) {
+  clearHostSession();
+}
+
+onMounted(async () => {
+  if (!pin.value || !hostToken.value) return;
+  connect(pin.value);
+  try {
+    await syncFromServer(pin.value, hostToken.value);
+  } catch (e) {
+    // The relay forgot this session (backend restart): the quiz can't be
+    // continued, so fall back to a clean setup screen.
+    console.warn("Could not resume host session", e);
+    clearHostSession();
+    unsubscribe?.();
+    unsubscribe = null;
+    pin.value = null;
+    hostToken.value = null;
+    status.value = "setup";
+  }
+});
+
 async function startQuestion(index: number) {
-  if (!quiz.value || !hostPin.value) return;
+  if (!quiz.value || !pin.value || !hostToken.value) return;
 
   currentQuestionIndex.value = index;
   tally.value = {};
@@ -199,12 +282,12 @@ async function startQuestion(index: number) {
 
   // Trimmed payload: players never render prompt/option content (SPEC.md
   // §4.1/§8), so only the index needs to cross the wire.
-  await advanceSession(hostPin.value, "question_started", { question_index: index });
+  await advanceSession(pin.value, hostToken.value, "question_started", { question_index: index });
   status.value = "question_active";
 }
 
 async function reveal() {
-  if (!quiz.value || !hostPin.value || status.value !== "question_active") return;
+  if (!quiz.value || !pin.value || !hostToken.value || status.value !== "question_active") return;
   status.value = "question_reveal";
   const q = quiz.value.questions[currentQuestionIndex.value];
 
@@ -232,7 +315,7 @@ async function reveal() {
     scores.set(playerId, (scores.get(playerId) ?? 0) + pointsAwarded);
   }
 
-  await advanceSession(hostPin.value, "question_revealed", {
+  await advanceSession(pin.value, hostToken.value, "question_revealed", {
     question_index: currentQuestionIndex.value,
     correct_index: q.correctIndex,
     counts: tally.value,
@@ -241,18 +324,21 @@ async function reveal() {
 }
 
 async function showLeaderboard() {
-  if (!hostPin.value) return;
-  await advanceSession(hostPin.value, "leaderboard_updated", { standings: standings.value });
+  if (!pin.value || !hostToken.value) return;
+  await advanceSession(pin.value, hostToken.value, "leaderboard_updated", {
+    standings: standings.value,
+  });
   status.value = "leaderboard";
 }
 
 async function nextOrFinish() {
-  if (!quiz.value || !hostPin.value) return;
+  if (!quiz.value || !pin.value || !hostToken.value) return;
   if (currentQuestionIndex.value + 1 < quiz.value.questions.length) {
     await startQuestion(currentQuestionIndex.value + 1);
   } else {
-    await advanceSession(hostPin.value, "session_finished", {});
+    await advanceSession(pin.value, hostToken.value, "session_finished", {});
     status.value = "finished";
+    clearHostSession();
     unsubscribe?.();
     unsubscribe = null;
   }

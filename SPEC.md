@@ -204,7 +204,7 @@ LOBBY -> QUESTION_ACTIVE -> QUESTION_REVEAL -> LEADERBOARD -> (next question or)
 5. Host clicks "Next" to loop back to step 2, or "Finish" after the last
    question to show the final leaderboard and end the session.
 
-Host action are explicit HTTP calls (e.g. `POST /sessions/{host_pin}/advance`);
+Host action are explicit HTTP calls (e.g. `POST /sessions/{pin}/advance`);
 resulting state changes are pushed to all connected clients via SSE.
 
 ### 4.2 Real-time channels (SSE topics)
@@ -217,15 +217,55 @@ resulting state changes are pushed to all connected clients via SSE.
 - Host and player frontends both subscribe to the session's SSE stream and
   react to events; players additionally POST their answers via a normal
   REST call.
-- There is a public `pin` used by all users, and a `host_pin` only known to
-  the host; the `host_pin` must be supplied to advance the game. `pin` is a
-  6-digit numeric code (§4.1); `host_pin` is a separate, high-entropy random
+- There is a public `pin` used by all users, and a `host_token` only known to
+  the host; the `host_token` must be supplied to advance the game. `pin` is a
+  6-digit numeric code (§4.1); `host_token` is a separate, high-entropy random
   token (e.g. a 22-character URL-safe value from `secrets.token_urlsafe(16)`)
   so it can't be brute-forced or guessed the way a 6-digit PIN could.
 - `player_id`, returned to a player at join time, is likewise a high-entropy
-  random value; it doubles as that player's bearer secret for submitting
-  answers (no separate "player token" concept), so it must not be shown to
-  other players.
+  random value, but it is **not** a secret: it is broadcast to every
+  subscriber of the session (`player_joined`, `answer_count_update`) so the
+  host can attribute answers.
+- Each player therefore also gets a `player_token` at join time: a separate
+  high-entropy value, scoped to that one session, returned **only** to its
+  owner and never published in any event or state snapshot. Presenting it to
+  `/join` resumes the existing identity instead of creating a second player,
+  which is what makes a dropped connection recoverable (§4.3).
+- **Every path is addressed by the public `pin`; identity is proved by a
+  token in a request header** (`X-Host-Token` / `X-Player-Token`), never by
+  the URL — secrets in paths leak into browser history, referrers and proxy/
+  server access logs. The answering player is therefore identified by their
+  token rather than by anything in the request body, so one player cannot
+  submit an answer as another.
+
+### 4.3 Reconnecting
+
+Phones lock, networks switch, tabs get reloaded. Neither side may lose its
+place when that happens:
+
+- **Player**: `{player_id, player_token, nickname, score}` is stored in
+  localStorage under `math-quiz-player:{pin}` (one entry per quiz). On
+  loading a join link whose PIN already has an entry, the player app skips
+  the join form entirely and resumes with the token — same `player_id`, same
+  roster entry, original nickname (a reconnecting player cannot pick a new
+  one). The join response reports the active question and the player's own
+  already-submitted answer, so they land back exactly where they left off
+  rather than on the lobby screen. The score is the one piece of state the
+  server doesn't know (the host owns scoring), so it is restored from
+  localStorage.
+- **Host**: the quiz source, `pin`/`host_token`, lifecycle status, roster and
+  scores are mirrored to localStorage under `math-quiz-host` and restored on
+  load; the current question's answers are re-fetched from
+  `GET /sessions/{pin}/state`. The quiz source is only re-parsed, not
+  re-validated with Typst, since it already compiled cleanly when the
+  session was created.
+- Both entries are removed on `session_finished`. There is deliberately no
+  TTL: a quiz that is never formally finished keeps its entry so it can
+  still be resumed later. If the relay no longer knows the session (backend
+  restart), the stored entry is dropped and the app falls back to a fresh
+  join / setup screen.
+- Answers submitted while a client was offline are not replayed to it; the
+  host's `question_revealed` event remains authoritative for scoring.
 
 ## 5. Scoring
 
@@ -245,7 +285,9 @@ resulting state changes are pushed to all connected clients via SSE.
 
 ### 6.1 Persisted (Postgres/SQLite via SQLAlchemy async)
 
-- `math_quiz_quiz` — id, pin, host_pin, created_at.
+- `math_quiz_quiz` — id, pin, host_token, created_at. The row exists only
+  while the session does: `session_finished` deletes it, so a played quiz
+  leaves nothing behind in the database.
 
 Everything else (sessions, players, questions, live answers, scores) is
 **in-memory only**, scoped to the running process, matching the "session-only,
@@ -286,7 +328,7 @@ class PlayerState(NamedTuple):
 
 class SessionState:
     pin: str
-    host_pin: str
+    host_token: str
     questions: list[QuestionState]
     status: Literal["lobby", "question_active", "question_reveal",
                      "leaderboard", "finished"]
@@ -297,21 +339,30 @@ class SessionState:
 ## 7. API surface (draft)
 
 All paths below are mounted under `/api/math-quiz/v1` (§2). "Session" is used
-throughout this spec for the resource identified by `pin`/`host_pin`; there
-is no separate persisted "quiz" resource, so paths use `/sessions`
-consistently rather than `/quizzes`.
+throughout this spec for the resource identified by `pin`; there is no
+separate persisted "quiz" resource, so paths use `/sessions` consistently
+rather than `/quizzes`.
 
-| Method | Path                           | Who     | Purpose                               |
-|--------|--------------------------------|---------|---------------------------------------|
-| POST   | `/sessions`                    | Host    | Create a session (no body) → returns `{pin, host_pin}` |
-| POST   | `/sessions/{pin}/join`         | Player  | Join with nickname → returns `{player_id}` |
-| GET    | `/sessions/{pin}/events`       | Both    | SSE stream of session events          |
-| POST   | `/sessions/{host_pin}/advance` | Host    | Move to next lifecycle state          |
-| POST   | `/sessions/{pin}/answers`      | Player  | Submit answer for current question (body includes `player_id`) |
-| GET    | `/sessions/{pin}/state`        | Both    | Snapshot fetch (reconnect fallback)   |
+| Method | Path                           | Who     | Auth header      | Purpose                               |
+|--------|--------------------------------|---------|------------------|---------------------------------------|
+| POST   | `/sessions`                    | Host    | —                | Create a session (no body) → returns `{pin, host_token}` |
+| POST   | `/sessions/{pin}/join`         | Player  | —                | Join with nickname, optionally a `player_token` in the body to resume → returns `{player_id, player_token, nickname, reconnected, current_question_index, submitted_answer}` |
+| GET    | `/sessions/{pin}/events`       | Both    | — (see below)    | SSE stream of session events          |
+| POST   | `/sessions/{pin}/advance`      | Host    | `X-Host-Token`   | Move to next lifecycle state          |
+| POST   | `/sessions/{pin}/answers`      | Player  | `X-Player-Token` | Submit answer for current question (`{question_index, option_index}` — the player is identified by the token) |
+| GET    | `/sessions/{pin}/state`        | Both    | either           | Snapshot fetch (reconnect fallback)   |
 
-`host_pin` and `player_id` are the only access-control secrets (see §4.2);
-there is no separate bearer-token scheme layered on top of them.
+`host_token` and `player_token` are the only access-control secrets (see
+§4.2); there is no separate bearer-token scheme layered on top of them. A
+missing or wrong token is a `403`; a malformed one is rejected with `422`
+before any lookup happens.
+
+`/join` cannot require a token — it is the endpoint that issues one (an
+optional token in its body only ever *upgrades* the call into a reconnect).
+`/events` is the one endpoint that stays gated on the `pin` alone: the
+browser's native `EventSource` cannot send custom headers, and moving the
+secret into the query string would leak it into access logs for no real gain
+— the stream only ever carries events that every participant receives anyway.
 
 ## 8. Frontend (Vue 3)
 
@@ -376,7 +427,7 @@ there is no separate bearer-token scheme layered on top of them.
 - Small-scale deployment: single Heroku dyno, single event loop process
   (no multi-worker pub/sub fan-out needed), Postgres for the `math_quiz_quiz`
   table.
-- No authentication/accounts; `host_pin` and `player_id` are high-entropy
+- No authentication/accounts; `host_token` and `player_token` are high-entropy
   secrets scoped to a single session, not tied to user identities (§4.2).
 - Reasonable input validation: nickname length/charset, answer payload
   shape, rejecting answers for the wrong question index or once that
@@ -417,22 +468,24 @@ The spec says the server "only stores game ids and enables communication"
 pin down exactly what crosses the wire, since §7's endpoints are otherwise
 ambiguous about it:
 
-- **`POST /sessions`**: mints `{pin, host_pin}` and stores a bare row in
-  `math_quiz_quiz` (id, pin, host_pin, created_at — §6.1). The server
+- **`POST /sessions`**: mints `{pin, host_token}` and stores a bare row in
+  `math_quiz_quiz` (id, pin, host_token, created_at — §6.1), which
+  `session_finished` deletes again along with the in-memory state. The server
   never sees or parses the quiz source at all — it isn't sent to the
-  server, only pasted into the host's browser (§1, §3). If the host
-  refreshes mid-game, both the quiz and all runtime state (current
-  question, scores) are lost and they must start a new session — an
-  accepted v1 limitation, not something to solve now.
-- **`POST /sessions/{host_pin}/advance`**: a generic *publish* endpoint, not
+  server, only pasted into the host's browser (§1, §3). Because of that,
+  the host mirrors its own session state to localStorage so a refresh or
+  crash can resume the running quiz (§4.3).
+- **`POST /sessions/{pin}/advance`**: a generic *publish* endpoint, not
   a server-side state machine. Body is `{event_type, data}`; the host's Vue
   store computes the next lifecycle state and the outgoing payload (e.g. the
   next `question_started` with question data minus the correct answer), and
-  the server just validates `host_pin` and republishes to that `pin`'s SSE
-  topic. The server never needs to understand quiz content to do this.
-- **`POST /sessions/{pin}/answers`**: body is `{player_id, question_index,
-  option_index}`. The server validates `player_id` against its roster and
-  that the question is still active (current index, not yet revealed), but
+  the server just checks the `X-Host-Token` header against that session and
+  republishes to the `pin`'s SSE topic. The server never needs to understand
+  quiz content to do this.
+- **`POST /sessions/{pin}/answers`**: body is `{question_index,
+  option_index}`; the submitting player is resolved from the
+  `X-Player-Token` header, never from the body. The server checks that the
+  question is still active (current index, not yet revealed), but
   treats `option_index` as an opaque bucket — it can still
   maintain a live `{0: n, 1: n, ...}` tally per question purely by counting
   submissions per index, without ever knowing which index is correct. That
@@ -441,7 +494,9 @@ ambiguous about it:
   client-side when the host reveals the answer. The `answer_count_update`
   event also carries the submitting `player_id`, its `option_index` and the
   server-recorded `submitted_at` timestamp, which is what lets the host
-  rank the correct answers for the 12/11/10 ladder (§5).
+  rank the correct answers for the 12/11/10 ladder (§5). The same per-player
+  records are exposed on `GET /sessions/{pin}/state` so a reloaded host can
+  rebuild the answer map it needs to score the current question.
 - Per-player correctness/points are therefore also computed **client-side by
   the host**, not the server — the host publishes them as part of the
   `question_revealed` event data, keyed by `player_id`.
@@ -482,8 +537,8 @@ stateless parsing logic before the stateful real-time game loop:
    and scoring math (§5) match between host-computed values and what
    players see.
 7. **Hardening**: input validation at every endpoint (nickname
-   length/charset, PIN/host_pin/player_id shape checks, rejecting
-   answers/advances for the wrong `pin`/`host_pin`/question index — OWASP-
+   length/charset, PIN/token shape checks, rejecting
+   answers/advances for the wrong `pin`/token/question index — OWASP-
    relevant since these are the only access-control secrets), reconnect/
    backoff for dropped SSE streams (`Last-Event-ID` replay, matching the
    existing `AsyncPubSub` behavior), keep-alive tuning.

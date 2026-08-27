@@ -4,9 +4,11 @@ import {
   fetchSessionState,
   submitAnswer,
   subscribeToSession,
+  type JoinResponse,
   type LeaderboardEntry,
   type SessionEvent,
 } from "../api/mathQuizClient";
+import { clearPlayerSession, savePlayerSession } from "../api/storedSession";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
@@ -19,6 +21,7 @@ const RECONNECT_DELAY_MS = 3000;
 const status = ref<Status>("join");
 const pin = ref<string | null>(null);
 const playerId = ref<string | null>(null);
+const playerToken = ref<string | null>(null);
 const nickname = ref<string | null>(null);
 
 const currentQuestionIndex = ref<number | null>(null);
@@ -55,6 +58,7 @@ function handleEvent(event: SessionEvent) {
       if (result) {
         lastResult.value = { correct: result.correct, pointsAwarded: result.points_awarded };
         myScore.value += result.points_awarded;
+        persist();
       }
       revealCorrectIndex.value = event.data.correct_index;
       status.value = "question_reveal";
@@ -66,6 +70,8 @@ function handleEvent(event: SessionEvent) {
       break;
     case "session_finished":
       status.value = "finished";
+      // The quiz is over, so the reconnect credential has no further use.
+      if (pin.value) clearPlayerSession(pin.value);
       teardown();
       break;
     default:
@@ -80,6 +86,19 @@ function startQuestion(questionIndex: number) {
   lastResult.value = null;
   revealCorrectIndex.value = null;
   status.value = "question_active";
+}
+
+// The score is the only piece of player state the server doesn't know (the
+// host owns scoring), so it has to survive a reload locally.
+function persist() {
+  if (!pin.value || !playerId.value || !playerToken.value || !nickname.value) return;
+  savePlayerSession({
+    pin: pin.value,
+    playerId: playerId.value,
+    playerToken: playerToken.value,
+    nickname: nickname.value,
+    score: myScore.value,
+  });
 }
 
 function connect(joinedPin: string) {
@@ -107,9 +126,9 @@ function connect(joinedPin: string) {
  * screen for the rest of the quiz.
  */
 async function resyncFromServer() {
-  if (!pin.value || status.value === "join" || status.value === "finished") return;
+  if (!pin.value || !playerToken.value || status.value === "join" || status.value === "finished") return;
   try {
-    const snapshot = await fetchSessionState(pin.value);
+    const snapshot = await fetchSessionState(pin.value, { playerToken: playerToken.value });
     const serverIndex = snapshot.current_question_index;
     if (serverIndex === null) return;
     if (currentQuestionIndex.value === null || serverIndex > currentQuestionIndex.value) {
@@ -138,11 +157,23 @@ function teardown() {
   document.removeEventListener("visibilitychange", onVisibilityChange);
 }
 
-function onJoined(joinedPin: string, joinedPlayerId: string, joinedNickname: string) {
+function onJoined(joinedPin: string, result: JoinResponse, restoredScore: number) {
   pin.value = joinedPin;
-  playerId.value = joinedPlayerId;
-  nickname.value = joinedNickname;
-  status.value = "lobby";
+  playerId.value = result.player_id;
+  playerToken.value = result.player_token;
+  nickname.value = result.nickname;
+  myScore.value = restoredScore;
+
+  if (result.current_question_index !== null) {
+    startQuestion(result.current_question_index);
+    // Already answered before dropping out: show the locked-in choice rather
+    // than a live grid that would only earn a 409 on the next tap.
+    if (result.submitted_answer?.question_index === result.current_question_index) {
+      selectedIndex.value = result.submitted_answer.option_index;
+    }
+  } else {
+    status.value = "lobby";
+  }
 
   connect(joinedPin);
   resyncTimer = window.setInterval(() => void resyncFromServer(), RESYNC_INTERVAL_MS);
@@ -150,10 +181,10 @@ function onJoined(joinedPin: string, joinedPlayerId: string, joinedNickname: str
 }
 
 async function answer(optionIndex: number) {
-  if (!pin.value || !playerId.value || currentQuestionIndex.value === null || selectedIndex.value !== null) return;
+  if (!pin.value || !playerToken.value || currentQuestionIndex.value === null || selectedIndex.value !== null) return;
   selectedIndex.value = optionIndex; // optimistic; reveal is authoritative regardless
   try {
-    await submitAnswer(pin.value, playerId.value, currentQuestionIndex.value, optionIndex);
+    await submitAnswer(pin.value, playerToken.value, currentQuestionIndex.value, optionIndex);
   } catch (e) {
     console.error("Failed to submit answer", e);
   }

@@ -31,7 +31,6 @@ async def _reset_state():
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
     math_quiz._sessions_by_pin.clear()
-    math_quiz._pin_by_host_pin.clear()
     yield
 
 
