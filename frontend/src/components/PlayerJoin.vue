@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { joinSession, type JoinResponse } from "../api/mathQuizClient";
-import { clearPlayerSession, loadPlayerSession, savePlayerSession } from "../api/storedSession";
+import { joinSession } from "../api/quizClient";
+import { loadPlayerSession, savePlayerSession, type StoredPlayerSession } from "../api/storedSession";
 
 const NICKNAME_STORAGE_KEY = "math-quiz-nickname";
 
@@ -14,9 +14,9 @@ const error = ref("");
 const joining = ref(false);
 const reconnecting = ref(false);
 
-const emit = defineEmits<{ joined: [pin: string, result: JoinResponse, score: number] }>();
+const emit = defineEmits<{ joined: [session: StoredPlayerSession] }>();
 
-async function join(token?: string, restoredScore = 0) {
+async function join() {
   error.value = "";
   const trimmedPin = pin.value.trim();
   const trimmedNickname = nickname.value.trim();
@@ -24,23 +24,28 @@ async function join(token?: string, restoredScore = 0) {
     error.value = "Gib die 6-stellige Spiel-PIN ein";
     return;
   }
-  if (!token && !trimmedNickname) {
+  if (!trimmedNickname) {
     error.value = "Gib einen Nickname ein";
     return;
   }
 
   joining.value = true;
   try {
-    const result = await joinSession(trimmedPin, trimmedNickname, token);
-    localStorage.setItem(NICKNAME_STORAGE_KEY, result.nickname);
-    savePlayerSession({
+    // Minting an identity is anonymous; the nickname reaches the host as an
+    // ordinary message, retried by PlayerApp until the roster confirms it.
+    const { playerId, playerToken } = await joinSession(trimmedPin);
+    localStorage.setItem(NICKNAME_STORAGE_KEY, trimmedNickname);
+    const session: StoredPlayerSession = {
       pin: trimmedPin,
-      playerId: result.player_id,
-      playerToken: result.player_token,
-      nickname: result.nickname,
-      score: result.reconnected ? restoredScore : 0,
-    });
-    emit("joined", trimmedPin, result, result.reconnected ? restoredScore : 0);
+      playerId,
+      playerToken,
+      nickname: trimmedNickname,
+      score: 0,
+      selectedIndex: null,
+      answeredQuestionIndex: null,
+    };
+    savePlayerSession(session);
+    emit("joined", session);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -49,22 +54,13 @@ async function join(token?: string, restoredScore = 0) {
 }
 
 // A stored token means this device already belongs to a player in this quiz.
-// Resume it straight away rather than showing the form again -- re-joining is
-// exactly what used to add a duplicate player after a dropped connection.
-onMounted(async () => {
+// Tokens are signed rather than stored server-side, so resuming needs no
+// request at all -- and re-joining would only create a duplicate player.
+onMounted(() => {
   const stored = pin.value ? loadPlayerSession(pin.value) : null;
   if (!stored) return;
-
   reconnecting.value = true;
-  nickname.value = stored.nickname;
-  await join(stored.playerToken, stored.score);
-  if (error.value) {
-    // The session is gone (quiz finished, backend restarted): fall back to a
-    // normal join instead of leaving the player stuck on an error.
-    clearPlayerSession(stored.pin);
-    error.value = "";
-  }
-  reconnecting.value = false;
+  emit("joined", stored);
 });
 </script>
 

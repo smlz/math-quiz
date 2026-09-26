@@ -23,9 +23,9 @@ at all. Use at your own risk!
 
 | Part | Location | Notes |
 |------|----------|-------|
-| Backend | [api_async.py](api_async.py), [math_quiz.py](math_quiz.py) | FastAPI + SQLAlchemy async. The quiz router is mounted under `/api/math-quiz/v1/`. It is a pure relay: it mints session PINs and fans out events via SSE — it never sees the quiz content or the correct answers. |
+| Backend | [quiz_relay_api.py](quiz_relay_api.py) | FastAPI. A stateless message relay under `/api/v1`: it mints session PINs and signed tokens, then fans opaque JSON between two SSE streams. It stores nothing — not the quiz, not the answers, not even the list of sessions — so a restart costs a few seconds of reconnect rather than the game. See [SPEC.md](SPEC.md). |
 | Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript. Hash routes: `#/join` mounts the player app, anything else the host app — so any static file server can host it without SPA rewrite rules. The host setup screen shows a live side-by-side preview of the quiz. All quiz state lives in the host's browser tab. |
-| Database | SQLite locally (`aiosqlite`), Postgres (`asyncpg`) in production | Only stores session ids/PINs. Configured via the `DATABASE_URL` env var. |
+| Database | none | Deliberately. The host re-broadcasts a full state snapshot every few seconds, so anyone who missed something catches up from the host instead of from stored history. |
 
 ## Prerequisites
 
@@ -36,16 +36,16 @@ at all. Use at your own risk!
 
 Two processes, in two terminals, both needed.
 
-**1. Backend** (from the repo root, serves on `http://127.0.0.1:3000`):
+**1. Backend** (from the repo root, serves on `http://127.0.0.1:8000`):
 
 ```powershell
 uv sync
-uv run uvicorn api_async:app --host 127.0.0.1 --port 3000 --reload
+uv run fastapi dev
 ```
 
-Do not run `python api_async.py` directly — `api_async` and `math_quiz`
-import each other, which only resolves when the module is imported normally
-(as uvicorn does), not when it is executed as `__main__`.
+Set `SERVER_SECRET` in production so tokens minted before a restart stay
+valid; without it a random one is generated per process, which is what you
+want locally and in tests.
 
 **2. Frontend** (from `frontend/`, serves on `http://127.0.0.1:5173`):
 
@@ -67,8 +67,8 @@ npm run build      # type-checks with vue-tsc, then bundles to frontend/dist
 npm run preview    # serve the production bundle locally
 ```
 
-The backend needs no build step; deploy it with any ASGI server, e.g.
-`uvicorn api_async:app`.
+The backend needs no build step; deploy it with `uv run fastapi deploy`, or
+with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
 
 ## Running tests
 

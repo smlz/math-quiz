@@ -33,13 +33,11 @@ export default defineConfig({
   ],
   webServer: [
     {
-      // A dedicated sqlite file keeps this from touching the local dev DB
-      // (messenger.db); the in-memory session/roster state in math_quiz.py
-      // always starts empty on process boot regardless.
-      command: "uv run uvicorn api_async:app --host 127.0.0.1 --port 3000",
+      // The relay keeps no state anywhere, so each run starts clean with no
+      // database or fixture setup at all.
+      command: "uv run uvicorn quiz_relay_api:app --host 127.0.0.1 --port 8000",
       cwd: "..",
-      url: "http://127.0.0.1:3000/",
-      env: { DATABASE_URL: "sqlite+aiosqlite:///./e2e-test.db" },
+      url: "http://127.0.0.1:8000/",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
       stdout: "pipe",

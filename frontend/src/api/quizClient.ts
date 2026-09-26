@@ -14,8 +14,8 @@
 // which has no backend of its own, so it targets the relay directly (CORS is
 // open, see quiz_relay_api.py).
 const API_BASE = import.meta.env.DEV
-  ? "/api"
-  : "https://quiz-api.fastapicloud.dev";
+  ? "/api/v1"
+  : "https://quiz-api.fastapicloud.dev/api/v1";
 
 /** How often the host re-sends its snapshot even when nothing changed. */
 export const HEARTBEAT_MS = 5000;

@@ -1,17 +1,11 @@
 [project]
 name = "math-quiz"
 version = "0.1.0"
-description = "Live math quiz backend"
+description = "Live math quiz relay backend"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
-    "sqlalchemy[asyncio]>=2.0",
-    "aiosqlite>=0.20",
-    "asyncpg>=0.29",
-    "pydantic>=2.7",
-    "python-multipart>=0.0.9",
+    "fastapi[standard]>=0.111",
 ]
 
 [dependency-groups]
@@ -23,6 +17,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.fastapi]
+entrypoint = "quiz_relay_api:app"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

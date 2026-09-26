@@ -1,33 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import {
-  advanceSession,
   createSession,
-  fetchSessionState,
-  subscribeToSession,
-  type LeaderboardEntry,
-  type PlayerResult,
-} from "../api/mathQuizClient";
+  pointsForReveal,
+  publishState,
+  subscribeToMessages,
+  HEARTBEAT_MS,
+  type ConnectionStatus,
+  type IncomingMessage,
+  type Phase,
+  type SessionSnapshot,
+} from "../api/quizClient";
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { parseQuiz } from "../quiz/parseQuiz";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
 import { renderTypst } from "../quiz/typst";
-import type { ParsedQuiz, QuestionState } from "../quiz/types";
+import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 
-// Correct answers score by submission order: 12 for the first, 11 for the
-// second, 10 for every further one (SPEC.md §5/§6.2). Not configurable.
-const POINTS_BY_CORRECT_RANK = [12, 11];
-const POINTS_PER_CORRECT_ANSWER = 10;
-
 const PREVIEW_DEBOUNCE_MS = 300;
 
-type Status = "setup" | "lobby" | "question_active" | "question_reveal" | "leaderboard" | "finished";
+// "setup" is the only state with no session behind it; every other value is
+// exactly the phase players are told about.
+type Status = "setup" | Phase;
 
 const quizSource = ref(SAMPLE_QUIZ);
 const loadErrors = ref<string[]>([]);
@@ -63,17 +63,21 @@ watch(
 const pin = ref<string | null>(null);
 const hostToken = ref<string | null>(null);
 const status = ref<Status>("setup");
+const connection = ref<ConnectionStatus>("open");
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
 
 const currentQuestionIndex = ref(-1);
-const tally = ref<Record<number, number>>({});
-// Reactive: its size drives the live "N of M answered" button label (SPEC.md §8),
-// not just read synchronously inside `reveal()`.
-const answersForCurrentQuestion = reactive(new Map<string, { optionIndex: number; submittedAt: number }>());
+// Insertion order is arrival order, which is exactly what decides the 12/11/10
+// ladder -- no timestamps needed.
+const answers = reactive(new Map<string, number>()); // player_id -> option_index
+// Who answered the current question correctly, in arrival order. Frozen at
+// reveal so re-broadcasting the same snapshot can never re-score anyone.
+const correctOrder = ref<string[]>([]);
 
 let unsubscribe: (() => void) | null = null;
+let heartbeat: number | null = null;
 
 const nicknames = computed(() => [...roster.values()]);
 
@@ -82,10 +86,12 @@ const currentQuestion = computed<QuestionState | null>(() =>
 );
 
 const countsArray = computed<number[]>(() =>
-  currentQuestion.value ? currentQuestion.value.options.map((_, i) => tally.value[i] ?? 0) : [],
+  currentQuestion.value
+    ? currentQuestion.value.options.map((_, i) => [...answers.values()].filter((v) => v === i).length)
+    : [],
 );
 
-const answeredCount = computed(() => answersForCurrentQuestion.size);
+const answeredCount = computed(() => answers.size);
 
 const answerButtonLabel = computed(() =>
   roster.size > 0 && answeredCount.value >= roster.size
@@ -157,60 +163,90 @@ async function loadAndCreateSession() {
 
   const created = await createSession();
   pin.value = created.pin;
-  hostToken.value = created.host_token;
-
-  connect(created.pin);
-
-  // Seed the roster in case a player joined between session creation and
-  // the SSE subscription above being established.
-  await syncFromServer(created.pin, created.host_token);
+  hostToken.value = created.hostToken;
 
   status.value = "lobby";
+  connect(created.pin, created.hostToken);
+  await broadcast();
 }
 
-function connect(sessionPin: string) {
-  unsubscribe = subscribeToSession(sessionPin, (event) => {
-    switch (event.type) {
-      case "player_joined":
-        roster.set(event.data.player_id, event.data.nickname);
-        if (!scores.has(event.data.player_id)) scores.set(event.data.player_id, 0);
-        break;
-      case "answer_count_update":
-        tally.value = event.data.counts;
-        answersForCurrentQuestion.set(event.data.player_id, {
-          optionIndex: event.data.option_index,
-          submittedAt: Date.parse(event.data.submitted_at),
-        });
-        break;
-      default:
-        // question_started/question_revealed/leaderboard_updated/session_finished
-        // are authored and applied locally by this host app itself; no need
-        // to react to their own echo back over SSE.
-        break;
-    }
+/** The whole of what players are told, rebuilt from scratch every time.
+ *
+ * `players` carries a different meaning per phase (see SessionSnapshot):
+ * who has joined, who has answered, who was correct and in what order, or
+ * the rank order. Nicknames and scores stay here on the host.
+ */
+function buildSnapshot(): SessionSnapshot {
+  const phase = status.value === "setup" ? "lobby" : status.value;
+  const players =
+    phase === "lobby"
+      ? [...roster.keys()]
+      : phase === "question"
+        ? [...answers.keys()]
+        : phase === "reveal"
+          ? correctOrder.value
+          : standings.value.map((entry) => entry.player_id);
+
+  return {
+    phase,
+    question_index: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
+    players,
+    ...(phase === "reveal" && currentQuestion.value
+      ? { correct_index: currentQuestion.value.correctIndex }
+      : {}),
+  };
+}
+
+/** Publishes the current snapshot. Called on every change *and* on a timer:
+ * the repetition is what lets a player who missed something catch up without
+ * the relay having to remember anything. */
+async function broadcast() {
+  if (!pin.value || !hostToken.value || status.value === "setup") return;
+  try {
+    await publishState(pin.value, hostToken.value, buildSnapshot());
+    connection.value = "open";
+  } catch (e) {
+    console.warn("Snapshot broadcast failed", e);
+    connection.value = "reconnecting";
+  }
+}
+
+function handleMessage({ player_id, payload }: IncomingMessage) {
+  if (payload.type === "join") {
+    if (roster.get(player_id) === payload.nickname) return; // a join retry
+    roster.set(player_id, payload.nickname);
+    if (!scores.has(player_id)) scores.set(player_id, 0);
+  } else {
+    if (status.value !== "question") return;
+    if (payload.question_index !== currentQuestionIndex.value) return;
+    // Unknown senders are ignored: anyone who knows the pin can mint a token,
+    // but only players the host has seen join can score.
+    if (!roster.has(player_id) || answers.has(player_id)) return;
+    answers.set(player_id, payload.option_index);
+  }
+  // Answer immediately rather than at the next heartbeat, so the sender sees
+  // its own message land without a visible delay.
+  void broadcast();
+}
+
+function connect(sessionPin: string, token: string) {
+  unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, (state) => {
+    connection.value = state;
   });
+  heartbeat = window.setInterval(() => void broadcast(), HEARTBEAT_MS);
 }
 
-/** Pulls the roster and the current question's answers back from the relay --
- * both to close the join-before-subscribe race on a fresh session, and to
- * rebuild the answer map (needed for scoring) after a host reload. */
-async function syncFromServer(sessionPin: string, token: string) {
-  const snapshot = await fetchSessionState(sessionPin, { hostToken: token });
-  for (const player of snapshot.players) {
-    roster.set(player.player_id, player.nickname);
-    if (!scores.has(player.player_id)) scores.set(player.player_id, 0);
-  }
-  tally.value = snapshot.tally;
-  for (const [playerId, answer] of Object.entries(snapshot.answers)) {
-    answersForCurrentQuestion.set(playerId, {
-      optionIndex: answer.option_index,
-      submittedAt: Date.parse(answer.submitted_at),
-    });
+function disconnect() {
+  unsubscribe?.();
+  unsubscribe = null;
+  if (heartbeat !== null) {
+    clearInterval(heartbeat);
+    heartbeat = null;
   }
 }
 
-// A running quiz only exists in this browser (the server never sees the quiz
-// source), so everything needed to carry on after a reload is mirrored to
+// A running quiz only exists in this browser (the relay stores nothing at
+// all), so everything needed to carry on after a reload is mirrored to
 // localStorage until the quiz is finished.
 function persistSession() {
   if (!pin.value || !hostToken.value || status.value === "setup" || status.value === "finished") return;
@@ -222,12 +258,22 @@ function persistSession() {
     currentQuestionIndex: currentQuestionIndex.value,
     roster: [...roster],
     scores: [...scores],
-    tally: tally.value,
+    answers: [...answers],
+    correctOrder: correctOrder.value,
   });
 }
 
 watch(
-  () => [pin.value, hostToken.value, status.value, currentQuestionIndex.value, tally.value, [...roster], [...scores]],
+  () => [
+    pin.value,
+    hostToken.value,
+    status.value,
+    currentQuestionIndex.value,
+    correctOrder.value,
+    [...roster],
+    [...scores],
+    [...answers],
+  ],
   persistSession,
   { deep: true },
 );
@@ -243,9 +289,10 @@ if (restored?.hostToken) {
     pin.value = restored.pin;
     hostToken.value = restored.hostToken;
     currentQuestionIndex.value = restored.currentQuestionIndex;
-    tally.value = restored.tally;
+    correctOrder.value = restored.correctOrder;
     for (const [playerId, nickname] of restored.roster) roster.set(playerId, nickname);
     for (const [playerId, score] of restored.scores) scores.set(playerId, score);
+    for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
     status.value = restored.status as Status;
   } catch {
     quiz.value = null;
@@ -255,103 +302,72 @@ if (restored?.hostToken) {
   clearHostSession();
 }
 
-onMounted(async () => {
+// Nothing to recover from the relay: it never knew anything about this
+// session in the first place, so resuming is just reconnecting and
+// broadcasting again.
+onMounted(() => {
   if (!pin.value || !hostToken.value) return;
-  connect(pin.value);
-  try {
-    await syncFromServer(pin.value, hostToken.value);
-  } catch (e) {
-    // The relay forgot this session (backend restart): the quiz can't be
-    // continued, so fall back to a clean setup screen.
-    console.warn("Could not resume host session", e);
-    clearHostSession();
-    unsubscribe?.();
-    unsubscribe = null;
-    pin.value = null;
-    hostToken.value = null;
-    status.value = "setup";
-  }
+  connect(pin.value, hostToken.value);
+  void broadcast();
 });
 
 async function startQuestion(index: number) {
   if (!quiz.value || !pin.value || !hostToken.value) return;
 
   currentQuestionIndex.value = index;
-  tally.value = {};
-  answersForCurrentQuestion.clear();
-
-  // Trimmed payload: players never render prompt/option content (SPEC.md
-  // §4.1/§8), so only the index needs to cross the wire.
-  await advanceSession(pin.value, hostToken.value, "question_started", { question_index: index });
-  status.value = "question_active";
+  answers.clear();
+  correctOrder.value = [];
+  status.value = "question";
+  await broadcast();
 }
 
 async function reveal() {
-  if (!quiz.value || !pin.value || !hostToken.value || status.value !== "question_active") return;
-  status.value = "question_reveal";
+  if (!quiz.value || status.value !== "question") return;
   const q = quiz.value.questions[currentQuestionIndex.value];
 
-  // Only correct answers occupy the 12/11 slots (§5); Array.sort is stable,
-  // so answers sharing a timestamp keep the order they arrived in.
-  const correctRank = new Map<string, number>();
-  [...answersForCurrentQuestion.entries()]
-    .filter(([, answer]) => answer.optionIndex === q.correctIndex)
-    .sort((a, b) => a[1].submittedAt - b[1].submittedAt)
-    .forEach(([playerId], i) => correctRank.set(playerId, i));
+  // Map iteration is insertion order, so this is submission order.
+  correctOrder.value = [...answers.entries()]
+    .filter(([, optionIndex]) => optionIndex === q.correctIndex)
+    .map(([playerId]) => playerId);
 
-  const results: Record<string, PlayerResult> = {};
   for (const playerId of roster.keys()) {
-    const answer = answersForCurrentQuestion.get(playerId);
-    if (!answer) {
-      results[playerId] = { option_index: null, correct: false, points_awarded: 0 };
-      continue;
-    }
-    const rank = correctRank.get(playerId);
-    const correct = rank !== undefined;
-    const pointsAwarded = correct
-      ? (POINTS_BY_CORRECT_RANK[rank] ?? POINTS_PER_CORRECT_ANSWER)
-      : 0;
-    results[playerId] = { option_index: answer.optionIndex, correct, points_awarded: pointsAwarded };
-    scores.set(playerId, (scores.get(playerId) ?? 0) + pointsAwarded);
+    const points = pointsForReveal(correctOrder.value, playerId);
+    scores.set(playerId, (scores.get(playerId) ?? 0) + points);
   }
 
-  await advanceSession(pin.value, hostToken.value, "question_revealed", {
-    question_index: currentQuestionIndex.value,
-    correct_index: q.correctIndex,
-    counts: tally.value,
-    results,
-  });
+  status.value = "reveal";
+  await broadcast();
 }
 
 async function showLeaderboard() {
-  if (!pin.value || !hostToken.value) return;
-  await advanceSession(pin.value, hostToken.value, "leaderboard_updated", {
-    standings: standings.value,
-  });
   status.value = "leaderboard";
+  await broadcast();
 }
 
 async function nextOrFinish() {
-  if (!quiz.value || !pin.value || !hostToken.value) return;
+  if (!quiz.value) return;
   if (currentQuestionIndex.value + 1 < quiz.value.questions.length) {
     await startQuestion(currentQuestionIndex.value + 1);
   } else {
-    await advanceSession(pin.value, hostToken.value, "session_finished", {});
     status.value = "finished";
+    await broadcast();
     clearHostSession();
-    unsubscribe?.();
-    unsubscribe = null;
+    disconnect();
   }
 }
 
 onUnmounted(() => {
   clearTimeout(previewTimer);
-  unsubscribe?.();
+  disconnect();
 });
 </script>
 
 <template>
   <div class="host-app">
+    <p v-if="connection === 'reconnecting' && status !== 'setup'" class="host-app__reconnecting">
+      Verbindung wird wiederhergestellt …
+    </p>
+
     <template v-if="status === 'setup'">
       <div class="host-app__setup">
         <div class="host-app__editor">
@@ -399,12 +415,12 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <template v-else-if="status === 'question_active' && currentQuestion">
+    <template v-else-if="status === 'question' && currentQuestion">
       <QuestionCard :question="currentQuestion" :reveal-correct="false" />
       <button type="button" @click="reveal">{{ answerButtonLabel }}</button>
     </template>
 
-    <template v-else-if="status === 'question_reveal' && currentQuestion">
+    <template v-else-if="status === 'reveal' && currentQuestion">
       <QuestionCard :question="currentQuestion" :reveal-correct="true" :counts="countsArray" />
       <button type="button" @click="showLeaderboard">Rangliste anzeigen</button>
     </template>
@@ -443,6 +459,14 @@ onUnmounted(() => {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+}
+.host-app__reconnecting {
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: #b8860b;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 4px;
 }
 .host-app__setup {
   display: grid;

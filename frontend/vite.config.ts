@@ -8,11 +8,11 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/math-quiz/' : '/',
   plugins: [vue()],
   server: {
-    // Relay API calls to the FastAPI backend (uvicorn, see api_async.py's
-    // `__main__` block) during local dev; production serves both from the
-    // same origin, so no proxy is needed there.
+    // Relay API calls to the local backend during dev; the backend serves the
+    // same `/api/v1` paths, so nothing is rewritten. In production the
+    // frontend targets the deployed relay directly.
     proxy: {
-      '/api': 'http://127.0.0.1:3000',
+      '/api': 'http://127.0.0.1:8000',
     },
   },
   test: {

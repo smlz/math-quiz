@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { LeaderboardEntry } from "../api/mathQuizClient";
+import type { LeaderboardEntry } from "../quiz/types";
 
 const props = defineProps<{
   standings: LeaderboardEntry[];

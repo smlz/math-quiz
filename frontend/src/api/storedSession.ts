@@ -16,6 +16,10 @@ export interface StoredPlayerSession {
   playerToken: string;
   nickname: string;
   score: number;
+  /** The player's own choice. Snapshots only say *that* someone answered,
+   * never what, so a reload could not otherwise restore the locked-in pick. */
+  selectedIndex: number | null;
+  answeredQuestionIndex: number | null;
 }
 
 export interface StoredHostSession {
@@ -26,7 +30,10 @@ export interface StoredHostSession {
   currentQuestionIndex: number;
   roster: [string, string][];
   scores: [string, number][];
-  tally: Record<number, number>;
+  /** player_id -> option_index for the current question, in arrival order. */
+  answers: [string, number][];
+  /** Frozen at reveal, so a reload cannot re-score the same question. */
+  correctOrder: string[];
 }
 
 function read<T>(key: string): T | null {

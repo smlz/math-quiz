@@ -23,3 +23,14 @@ export interface QuestionState {
 export interface ParsedQuiz {
   questions: QuestionState[];
 }
+
+/** Host screen only. Scores and nicknames never cross the wire: the relay
+ * broadcasts bare player ids, and the host is the only party that knows who
+ * they belong to. */
+export interface LeaderboardEntry {
+  player_id: string;
+  nickname: string;
+  score: number;
+  /** Standard competition ranking: ties share a rank, the next one skips. */
+  rank: number;
+}

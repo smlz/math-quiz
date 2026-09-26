@@ -1,24 +1,26 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import {
-  fetchSessionState,
-  submitAnswer,
-  subscribeToSession,
-  type JoinResponse,
-  type LeaderboardEntry,
-  type SessionEvent,
-} from "../api/mathQuizClient";
-import { clearPlayerSession, savePlayerSession } from "../api/storedSession";
+  pointsForReveal,
+  sendMessage,
+  subscribeToState,
+  STALE_AFTER_MS,
+  type ConnectionStatus,
+  type SessionSnapshot,
+} from "../api/quizClient";
+import { clearPlayerSession, savePlayerSession, type StoredPlayerSession } from "../api/storedSession";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
 
-type Status = "join" | "lobby" | "question_active" | "question_reveal" | "leaderboard" | "finished";
+type Status = "join" | "lobby" | "question" | "reveal" | "leaderboard" | "finished";
 
-const RESYNC_INTERVAL_MS = 5000;
-const RECONNECT_DELAY_MS = 3000;
+/** How often an unconfirmed message is re-sent until a snapshot shows it
+ * landed. This is the whole of the delivery guarantee. */
+const RETRY_MS = 2000;
 
 const status = ref<Status>("join");
+const connection = ref<ConnectionStatus>("open");
 const pin = ref<string | null>(null);
 const playerId = ref<string | null>(null);
 const playerToken = ref<string | null>(null);
@@ -26,70 +28,86 @@ const nickname = ref<string | null>(null);
 
 const currentQuestionIndex = ref<number | null>(null);
 const selectedIndex = ref<number | null>(null);
-const lastResult = ref<{ correct: boolean; pointsAwarded: number } | null>(null);
+const answeredQuestionIndex = ref<number | null>(null);
+const joinAcknowledged = ref(false);
+const answerAcknowledged = ref(false);
+const lastPoints = ref(0);
 const revealCorrectIndex = ref<number | null>(null);
 const myScore = ref(0);
-const standings = ref<LeaderboardEntry[]>([]);
+const myRank = ref<number | null>(null);
+
+// The host re-broadcasts the same reveal snapshot every few seconds, so the
+// score must only be taken from the first one seen per question.
+let scoredQuestionIndex = -1;
 
 let unsubscribe: (() => void) | null = null;
-let resyncTimer: number | null = null;
-let reconnectTimer: number | null = null;
-
-const myRank = computed(() => {
-  const entry = standings.value.find((e) => e.player_id === playerId.value);
-  return entry ? entry.rank : null;
-});
-
-// Only the top 5 players are shown in the list, regardless of how many joined.
-const topStandings = computed(() => standings.value.slice(0, 5));
+let retryTimer: number | null = null;
+let lastSnapshotAt = 0;
 
 // Non-gameplay states (no answer grid) get their content vertically centered,
 // except leaderboard, which aligns to the top (bottom stays reserved/empty,
 // matching the host's button-anchored-to-bottom layout).
 const isCenteredState = computed(() => status.value === "lobby" || status.value === "finished");
 
-function handleEvent(event: SessionEvent) {
-  switch (event.type) {
-    case "question_started":
-      startQuestion(event.data.question_index);
+/** The only thing that drives this screen. Every snapshot is complete, so it
+ * is applied from scratch rather than merged -- missing one costs nothing but
+ * the wait for the next. */
+function handleSnapshot(snapshot: SessionSnapshot) {
+  lastSnapshotAt = Date.now();
+  connection.value = "open";
+
+  const me = playerId.value;
+  if (!me) return;
+  const listed = snapshot.players.includes(me);
+
+  if (snapshot.phase === "question" && snapshot.question_index !== currentQuestionIndex.value) {
+    currentQuestionIndex.value = snapshot.question_index;
+    selectedIndex.value = null;
+    answeredQuestionIndex.value = null;
+    answerAcknowledged.value = false;
+    revealCorrectIndex.value = null;
+  }
+
+  switch (snapshot.phase) {
+    case "lobby":
+      joinAcknowledged.value = listed;
+      status.value = "lobby";
       break;
-    case "question_revealed": {
-      const result = event.data.results[playerId.value!];
-      if (result) {
-        lastResult.value = { correct: result.correct, pointsAwarded: result.points_awarded };
-        myScore.value += result.points_awarded;
+    case "question":
+      // During a question the list is who has answered, so being in it also
+      // proves the join landed.
+      answerAcknowledged.value = listed;
+      if (listed) joinAcknowledged.value = true;
+      status.value = "question";
+      break;
+    case "reveal":
+      revealCorrectIndex.value = snapshot.correct_index ?? null;
+      if (scoredQuestionIndex !== snapshot.question_index) {
+        scoredQuestionIndex = snapshot.question_index ?? -1;
+        lastPoints.value = pointsForReveal(snapshot.players, me);
+        myScore.value += lastPoints.value;
         persist();
       }
-      revealCorrectIndex.value = event.data.correct_index;
-      status.value = "question_reveal";
+      status.value = "reveal";
+      break;
+    case "leaderboard":
+    case "finished": {
+      const position = snapshot.players.indexOf(me);
+      myRank.value = position === -1 ? null : position + 1;
+      if (listed) joinAcknowledged.value = true;
+      status.value = snapshot.phase;
+      if (snapshot.phase === "finished") {
+        // The quiz is over, so the reconnect credential has no further use.
+        if (pin.value) clearPlayerSession(pin.value);
+        teardown();
+      }
       break;
     }
-    case "leaderboard_updated":
-      standings.value = event.data.standings;
-      status.value = "leaderboard";
-      break;
-    case "session_finished":
-      status.value = "finished";
-      // The quiz is over, so the reconnect credential has no further use.
-      if (pin.value) clearPlayerSession(pin.value);
-      teardown();
-      break;
-    default:
-      // player_joined / answer_count_update are host-facing bookkeeping only.
-      break;
   }
 }
 
-function startQuestion(questionIndex: number) {
-  currentQuestionIndex.value = questionIndex;
-  selectedIndex.value = null;
-  lastResult.value = null;
-  revealCorrectIndex.value = null;
-  status.value = "question_active";
-}
-
-// The score is the only piece of player state the server doesn't know (the
-// host owns scoring), so it has to survive a reload locally.
+// The score and the player's own choice are the only state nobody else keeps
+// for us, so they have to survive a reload locally.
 function persist() {
   if (!pin.value || !playerId.value || !playerToken.value || !nickname.value) return;
   savePlayerSession({
@@ -98,95 +116,81 @@ function persist() {
     playerToken: playerToken.value,
     nickname: nickname.value,
     score: myScore.value,
+    selectedIndex: selectedIndex.value,
+    answeredQuestionIndex: answeredQuestionIndex.value,
   });
 }
 
-function connect(joinedPin: string) {
-  unsubscribe = subscribeToSession(joinedPin, handleEvent, (event) => {
-    const source = event.target as EventSource | null;
-    // A fatal error (e.g. a 404 from a backend process that doesn't know this
-    // session) closes the stream for good -- the browser never retries it.
-    if (source?.readyState === EventSource.CLOSED && status.value !== "finished") {
-      unsubscribe?.();
-      unsubscribe = null;
-      reconnectTimer = window.setTimeout(() => {
-        reconnectTimer = null;
-        if (!unsubscribe && status.value !== "finished") connect(joinedPin);
-      }, RECONNECT_DELAY_MS);
-    }
-    void resyncFromServer();
-  });
-}
+/** Re-sends whatever the host has not confirmed yet, and notices when
+ * snapshots stop arriving. */
+function tick() {
+  if (!pin.value || !playerToken.value) return;
 
-/**
- * Recovers from a missed `question_started` event. The SSE stream is the only
- * thing that drives this screen, and it can silently miss events (phone locked
- * during the lobby, network switch, buffering proxy) with no `Last-Event-ID`
- * to replay from -- which would otherwise strand the player on the waiting
- * screen for the rest of the quiz.
- */
-async function resyncFromServer() {
-  if (!pin.value || !playerToken.value || status.value === "join" || status.value === "finished") return;
-  try {
-    const snapshot = await fetchSessionState(pin.value, { playerToken: playerToken.value });
-    const serverIndex = snapshot.current_question_index;
-    if (serverIndex === null) return;
-    if (currentQuestionIndex.value === null || serverIndex > currentQuestionIndex.value) {
-      startQuestion(serverIndex);
-    }
-  } catch (e) {
-    console.warn("Session state resync failed", e);
+  if (!joinAcknowledged.value && nickname.value) {
+    void sendMessage(pin.value, playerToken.value, {
+      type: "join",
+      nickname: nickname.value,
+    }).catch(() => {});
+  } else if (
+    status.value === "question" &&
+    selectedIndex.value !== null &&
+    !answerAcknowledged.value &&
+    currentQuestionIndex.value !== null
+  ) {
+    void sendMessage(pin.value, playerToken.value, {
+      type: "answer",
+      question_index: currentQuestionIndex.value,
+      option_index: selectedIndex.value,
+    }).catch(() => {});
   }
-}
 
-function onVisibilityChange() {
-  if (document.visibilityState === "visible") void resyncFromServer();
+  if (Date.now() - lastSnapshotAt > STALE_AFTER_MS) connection.value = "reconnecting";
 }
 
 function teardown() {
   unsubscribe?.();
   unsubscribe = null;
-  if (resyncTimer !== null) {
-    clearInterval(resyncTimer);
-    resyncTimer = null;
+  if (retryTimer !== null) {
+    clearInterval(retryTimer);
+    retryTimer = null;
   }
-  if (reconnectTimer !== null) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  document.removeEventListener("visibilitychange", onVisibilityChange);
 }
 
-function onJoined(joinedPin: string, result: JoinResponse, restoredScore: number) {
-  pin.value = joinedPin;
-  playerId.value = result.player_id;
-  playerToken.value = result.player_token;
-  nickname.value = result.nickname;
-  myScore.value = restoredScore;
+function onJoined(session: StoredPlayerSession) {
+  pin.value = session.pin;
+  playerId.value = session.playerId;
+  playerToken.value = session.playerToken;
+  nickname.value = session.nickname;
+  myScore.value = session.score;
+  selectedIndex.value = session.selectedIndex;
+  answeredQuestionIndex.value = session.answeredQuestionIndex;
+  // Seeded so the first snapshot for the question we already answered is not
+  // mistaken for a new one and does not clear the locked-in pick.
+  currentQuestionIndex.value = session.answeredQuestionIndex;
+  status.value = "lobby";
+  lastSnapshotAt = Date.now();
 
-  if (result.current_question_index !== null) {
-    startQuestion(result.current_question_index);
-    // Already answered before dropping out: show the locked-in choice rather
-    // than a live grid that would only earn a 409 on the next tap.
-    if (result.submitted_answer?.question_index === result.current_question_index) {
-      selectedIndex.value = result.submitted_answer.option_index;
-    }
-  } else {
-    status.value = "lobby";
-  }
-
-  connect(joinedPin);
-  resyncTimer = window.setInterval(() => void resyncFromServer(), RESYNC_INTERVAL_MS);
-  document.addEventListener("visibilitychange", onVisibilityChange);
+  unsubscribe = subscribeToState(session.pin, handleSnapshot, (state) => {
+    connection.value = state;
+  });
+  retryTimer = window.setInterval(tick, RETRY_MS);
+  tick();
 }
 
 async function answer(optionIndex: number) {
-  if (!pin.value || !playerToken.value || currentQuestionIndex.value === null || selectedIndex.value !== null) return;
-  selectedIndex.value = optionIndex; // optimistic; reveal is authoritative regardless
+  if (!pin.value || !playerToken.value || currentQuestionIndex.value === null) return;
+  if (selectedIndex.value !== null) return;
+  selectedIndex.value = optionIndex;
+  answeredQuestionIndex.value = currentQuestionIndex.value;
+  persist();
   try {
-    await submitAnswer(pin.value, playerToken.value, currentQuestionIndex.value, optionIndex);
-  } catch (e) {
-    console.error("Failed to submit answer", e);
+    await sendMessage(pin.value, playerToken.value, {
+      type: "answer",
+      question_index: currentQuestionIndex.value,
+      option_index: optionIndex,
+    });
+  } catch {
+    // `tick` keeps re-sending until a snapshot confirms it arrived.
   }
 }
 
@@ -200,6 +204,9 @@ onUnmounted(teardown);
     <template v-else>
       <header class="player-app__header">
         <p class="player-app__nickname">{{ nickname }}</p>
+        <p v-if="connection === 'reconnecting'" class="player-app__reconnecting">
+          Verbindung wird wiederhergestellt …
+        </p>
       </header>
 
       <main class="player-app__main" :class="{ 'player-app__main--center': isCenteredState }">
@@ -208,16 +215,16 @@ onUnmounted(teardown);
           <p>Warte, bis das Quiz startet…</p>
         </div>
 
-        <template v-else-if="status === 'question_active'">
+        <template v-else-if="status === 'question'">
           <p class="player-app__instruction">
             {{ selectedIndex !== null ? "Antwort abgeschickt — warte auf Auflösung…" : "Jetzt antworten!" }}
           </p>
           <PlayerQuestion :selected-index="selectedIndex" @answer="answer" />
         </template>
 
-        <template v-else-if="status === 'question_reveal'">
-          <h2 v-if="lastResult?.correct" class="player-app__instruction player-app__reveal-correct">
-            Richtig! +{{ lastResult.pointsAwarded }} Punkte
+        <template v-else-if="status === 'reveal'">
+          <h2 v-if="lastPoints > 0" class="player-app__instruction player-app__reveal-correct">
+            Richtig! +{{ lastPoints }} Punkte
           </h2>
           <h2 v-else class="player-app__instruction player-app__reveal-wrong">Falsch. +0 Punkte</h2>
           <p class="player-app__total-score">Gesamtpunktzahl: {{ myScore }}</p>
@@ -231,15 +238,6 @@ onUnmounted(teardown);
         <div v-else-if="status === 'leaderboard'" class="player-app__panel player-app__panel--top">
           <h2>Rangliste</h2>
           <p v-if="myRank">Du bist auf Platz {{ myRank }} mit {{ myScore }} Punkten</p>
-          <ol class="player-app__standings">
-            <li
-              v-for="entry in topStandings"
-              :key="entry.player_id"
-              :class="{ 'player-app__me': entry.player_id === playerId }"
-            >
-              {{ entry.nickname }} — {{ entry.score }}
-            </li>
-          </ol>
         </div>
 
         <div v-else-if="status === 'finished'" class="player-app__panel">
@@ -269,6 +267,14 @@ onUnmounted(teardown);
   margin: 0 0 0.5rem;
   font-weight: 700;
   color: #444;
+}
+.player-app__reconnecting {
+  margin: 0 0 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: #b8860b;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 4px;
 }
 .player-app__main {
   flex: 1;
