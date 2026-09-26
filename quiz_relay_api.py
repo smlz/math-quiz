@@ -224,7 +224,7 @@ ALLOWED_ORIGINS = (
     else [FRONTEND_ORIGIN, *DEV_ORIGINS]
 )
 
-app = FastAPI(title="Math Quiz relay")
+app = FastAPI(title="Quiz Relay API")
 # No cookies or HTTP auth travel with a request -- identity is a token in a
 # custom header -- so credentialed cross-origin requests stay disallowed.
 app.add_middleware(
