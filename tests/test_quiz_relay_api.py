@@ -86,6 +86,33 @@ async def test_join_rejects_malformed_pin(client):
     assert (await client.post("/session/abcdef")).status_code == 422
 
 
+async def test_create_session_redraws_a_pin_that_is_already_live(client, monkeypatch):
+    digits = iter("111111" + "222222")
+    monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: next(digits))
+    relay.live_pins.add("111111")
+
+    assert (await _create_session(client))["pin"] == "222222"
+
+
+async def test_end_session_releases_the_pin(client):
+    session = await _create_session(client)
+    assert session["pin"] in relay.live_pins
+
+    response = await client.delete(
+        f"/session/{session['pin']}",
+        headers={relay.HOST_TOKEN_HEADER: session["host_token"]},
+    )
+    assert response.status_code == 200
+    assert session["pin"] not in relay.live_pins
+
+
+async def test_end_session_requires_the_host_token(client):
+    session = await _create_session(client)
+
+    assert (await client.delete(f"/session/{session['pin']}")).status_code == 403
+    assert session["pin"] in relay.live_pins
+
+
 # Statelessness
 
 

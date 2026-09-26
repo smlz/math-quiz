@@ -121,6 +121,15 @@ export async function joinSession(pin: string): Promise<PlayerCredentials> {
   return { playerId: data.player_id, playerToken: data.player_token };
 }
 
+/** Release the pin so it can be handed out again. Best-effort: a pin the
+ * relay never hears about is freed by the next restart anyway. */
+export async function endSession(pin: string, hostToken: string): Promise<void> {
+  await fetch(`${API_BASE}/session/${pin}`, {
+    method: "DELETE",
+    headers: { [HOST_TOKEN_HEADER]: hostToken },
+  });
+}
+
 export function publishState(
   pin: string,
   hostToken: string,

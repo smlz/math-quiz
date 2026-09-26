@@ -308,7 +308,8 @@ What each side keeps locally:
 **Nothing.** There is no database and no server-side session registry. The
 relay holds only the set of currently connected SSE subscribers per topic,
 which is connection bookkeeping rather than state, and which disappears the
-moment the last subscriber leaves.
+moment the last subscriber leaves, plus an in-memory `set` of the pins
+currently in use (see §7).
 
 This is what makes a restart or a scale-to-zero cold start survivable: a
 valid token is the only thing needed to keep using a session, so a
@@ -383,12 +384,13 @@ PlayerMessage = (
 
 ## 7. API surface
 
-Six endpoints, mounted under `/api/v1` on the relay deployment. None of them
+Seven endpoints, mounted under `/api/v1` on the relay deployment. None of them
 inspects a payload. A `GET /` health check sits outside the prefix.
 
 | Method | Path                                    | Who    | Auth header      | Purpose |
 |--------|-----------------------------------------|--------|------------------|---------|
 | POST   | `/api/v1/session`                       | Host   | —                | Mint `{pin, host_token}` (no body) |
+| DELETE | `/api/v1/session/{pin}`                 | Host   | `X-Host-Token`   | Release the pin when the quiz finishes |
 | POST   | `/api/v1/session/{pin}`                 | Player | —                | Mint `{player_id, player_token}` (no body — the nickname is an ordinary message) |
 | GET    | `/api/v1/session/{pin}/state_stream`    | Player | — (see §4.2)     | SSE: host → all players |
 | GET    | `/api/v1/session/{pin}/message_stream`  | Host   | `X-Host-Token`   | SSE: players → host |
@@ -402,9 +404,12 @@ happens.
 
 Because nothing is stored, there is no "unknown session" error: a request
 carrying a valid token for a pin is served whether or not this process ever
-minted it. Pins are not checked for collisions either — with roughly one
-session at a time out of a million pins, a clash would only mean two hosts
-shared a topic, which is accepted.
+minted it. Pins, however, **are** checked for collisions: the relay keeps an
+in-memory `set` of the pins currently in use and re-draws until it finds a
+free one, so two live hosts can never share a topic. `DELETE
+/api/v1/session/{pin}` releases the pin when the quiz finishes; a host that
+never finishes simply leaves its pin reserved until the next restart,
+deployment or scale-to-zero purges the whole set.
 
 ## 8. Frontend (Vue 3)
 
@@ -531,10 +536,12 @@ invariant worth having is that any client can be brought fully up to date
 from the host at any moment, using only the current state and never the
 message history.
 
-- **`POST /api/v1/session`** mints `{pin, host_token}` and stores nothing.
-  The quiz source is never sent to the server at all — it is only pasted
-  into the host's browser (§1, §3) — so the host mirrors its own state to
-  localStorage to survive a refresh (§4.3).
+- **`POST /api/v1/session`** mints `{pin, host_token}` and stores nothing
+  but the pin itself, in the in-memory live-pin set that keeps two hosts
+  from drawing the same one (§7); `DELETE /api/v1/session/{pin}` gives it
+  back when the quiz finishes. The quiz source is never sent to the server
+  at all — it is only pasted into the host's browser (§1, §3) — so the host
+  mirrors its own state to localStorage to survive a refresh (§4.3).
 - **`POST /api/v1/session/{pin}/state`** is a publish endpoint, not a state
   machine. The host computes the next phase and the whole outgoing snapshot;
   the relay checks `X-Host-Token` and republishes verbatim.
@@ -563,7 +570,7 @@ stateless parsing logic before the stateful real-time game loop:
    all; this is the sole/official preview mechanism. Lets quiz authoring/
    rendering be verified in isolation, and doubles as the host's "load
    quiz" step.
-3. **Relay** — the six endpoints from §7, HMAC tokens, two topics per
+3. **Relay** — the seven endpoints from §7, HMAC tokens, two topics per
    session, no state. Provable with integration tests that never construct a
    real quiz, since arbitrary JSON payloads are enough.
 4. **Host app**: quiz load (step 2) → create session → lobby (roster from

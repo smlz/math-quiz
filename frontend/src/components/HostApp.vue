@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import {
   createSession,
+  endSession,
   pointsForReveal,
   publishState,
   subscribeToMessages,
@@ -351,6 +352,7 @@ async function nextOrFinish() {
   } else {
     status.value = "finished";
     await broadcast();
+    if (pin.value && hostToken.value) await endSession(pin.value, hostToken.value);
     clearHostSession();
     disconnect();
   }

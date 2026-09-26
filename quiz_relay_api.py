@@ -9,6 +9,11 @@ keeps no state at all:
     secret, so it can be verified after the process has forgotten everything,
   - the two per-session topics exist only as long as someone is subscribed.
 
+The single exception is the set of pins currently in use, kept only so two
+concurrent hosts cannot be handed the same one. It is a live-pin reservation,
+not session state: a host releases its pin when the quiz finishes, and a
+restart or scale-to-zero purges whatever was left dangling.
+
 Because of that, a restart or a scale-to-zero cold start needs no recovery
 endpoint. Participants reconnect, the host's next state broadcast arrives,
 and everyone is up to date again.
@@ -174,6 +179,11 @@ class Fanout:
 
 fanout = Fanout()
 
+# Pins handed out and not yet released. Purely a collision guard, so a
+# forgotten entry (host tab closed without finishing) costs nothing but one
+# unusable pin until the next restart.
+live_pins: set[str] = set()
+
 
 def _state_topic(pin: str) -> str:
     return f"{pin}:state"
@@ -216,11 +226,22 @@ async def health():
 
 @router.post("/session", response_model=CreateSessionResponse)
 async def create_session():
-    # Nothing is stored, so pins are not checked for collisions. With one
-    # session at a time out of a million pins, a clash just means two hosts
-    # would share a topic -- accepted (see SPEC.md).
-    pin = "".join(secrets.choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
+    while True:
+        pin = "".join(secrets.choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
+        if pin not in live_pins:
+            break
+    live_pins.add(pin)
     return CreateSessionResponse(pin=pin, host_token=_host_token(pin))
+
+
+@router.delete("/session/{pin}")
+async def end_session(
+    pin: str = PinPath,
+    host_token: str | None = HostTokenHeader,
+):
+    _require_host(pin, host_token)
+    live_pins.discard(pin)
+    return {"ok": True}
 
 
 @router.post("/session/{pin}", response_model=JoinSessionResponse)
