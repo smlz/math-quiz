@@ -7,6 +7,8 @@ A live quiz app for maths lessons. A **host** runs the game on a shared screen
 (projector); **players** join from their own devices with a 6-digit PIN or by
 scanning a QR code.
 
+The app is live at **<https://quiz.smlz.ch>**.
+
 Question prompts and answer options are authored as **Typst** source and
 compiled to SVG in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
 (WASM) — plain text, math and figures (`cetz`) all use the same syntax.
@@ -47,6 +49,11 @@ Set `SERVER_SECRET` in production so tokens minted before a restart stay
 valid; without it a random one is generated per process, which is what you
 want locally and in tests.
 
+Browsers may only call the relay from an allowlisted origin: the deployed
+frontend (`https://quiz.smlz.ch`) plus the local Vite dev/preview origins.
+Set `ALLOWED_ORIGINS` (comma-separated) to replace that list, e.g. for a
+staging deployment.
+
 **2. Frontend** (from `frontend/`, serves on `http://127.0.0.1:5173`):
 
 ```powershell
@@ -69,6 +76,11 @@ npm run preview    # serve the production bundle locally
 
 The backend needs no build step; deploy it with `uv run fastapi deploy`, or
 with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
+
+The frontend is published to GitHub Pages by
+[.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml) on
+every push to `main`; [frontend/public/CNAME](frontend/public/CNAME) keeps the
+`quiz.smlz.ch` custom domain attached to each deployment.
 
 ## Running tests
 

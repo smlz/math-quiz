@@ -208,12 +208,32 @@ class JoinSessionResponse(BaseModel):
 
 # App
 
+# Only the deployed frontend is allowed to call the relay from a browser,
+# plus the local Vite dev/preview origins so a checkout can talk to a running
+# relay. `ALLOWED_ORIGINS` (comma-separated) replaces the list entirely, e.g.
+# for a staging deployment.
+FRONTEND_ORIGIN = "https://quiz.smlz.ch"
+DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS")
+ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _allowed_origins.split(",") if origin.strip()]
+    if _allowed_origins
+    else [FRONTEND_ORIGIN, *DEV_ORIGINS]
+)
+
 app = FastAPI(title="Math Quiz relay")
+# No cookies or HTTP auth travel with a request -- identity is a token in a
+# custom header -- so credentialed cross-origin requests stay disallowed.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=[HOST_TOKEN_HEADER, PLAYER_TOKEN_HEADER, "Content-Type"],
 )
 
 router = APIRouter(prefix=API_PREFIX)

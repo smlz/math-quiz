@@ -35,7 +35,7 @@ or QR code and answer questions in real time.
 | Frontend         | Vue 3 (Composition API) + Vite                                     |
 | Rendering        | Typst, compiled and rendered to SVG or canvas client-side via `typst.ts` (WASM); question/answer text, math, and figures (e.g. via the `cetz` package) all go through this one pipeline — see `typst-experiments/` for a feasibility POC |
 | QR code          | Generated client-side JS on the teacher page |
-| Hosting          | Backend on FastAPI Cloud, frontend on GitHub Pages |
+| Hosting          | Backend on FastAPI Cloud, frontend on GitHub Pages under the custom domain `https://quiz.smlz.ch` (served from the site root, so Vite's `base` stays `/`) |
 
 The relay is its own app, mounted under `/api/v1` on its own deployment; it
 shares no code with any other project. General requirements for the relay,
@@ -639,7 +639,8 @@ no state at all (§6.1).
 
 ### A.3 Design decisions
 
-- Backend on FastAPI Cloud with a single replica; frontend on GitHub Pages.
+- Backend on FastAPI Cloud with a single replica; frontend on GitHub Pages,
+  served under its own domain.
 - No database and no server state at all. Tokens are HMACs of a server
   secret and pub/sub topics are created lazily, so a restart or a
   scale-to-zero cold start needs no recovery endpoint: participants simply

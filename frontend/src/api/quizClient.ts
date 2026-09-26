@@ -10,9 +10,9 @@
 // heartbeat. Nothing here replays, buffers or acknowledges anything.
 
 // In dev (and therefore in the Playwright e2e run) go through Vite's proxy
-// to the local backend; the production build is served from GitHub Pages,
-// which has no backend of its own, so it targets the relay directly (CORS is
-// open, see quiz_relay_api.py).
+// to the local backend; the production build is served from quiz.smlz.ch,
+// which has no backend of its own, so it targets the relay directly (that
+// origin is on the relay's CORS allowlist, see quiz_relay_api.py).
 const API_BASE = import.meta.env.DEV
   ? "/api/v1"
   : "https://quiz-api.fastapicloud.dev/api/v1";

@@ -287,3 +287,30 @@ async def test_a_full_queue_drops_the_oldest_frame_not_the_subscriber():
         assert data == '{"n":10}'
     finally:
         await _stop_subscriber(stream, task)
+
+
+@pytest.mark.parametrize(
+    "origin", [relay.FRONTEND_ORIGIN, "http://127.0.0.1:5173", "http://localhost:5173"]
+)
+async def test_cors_preflight_allows_the_frontend_and_dev_origins(client, origin):
+    response = await client.options(
+        "/session",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": relay.HOST_TOKEN_HEADER,
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+
+
+async def test_cors_preflight_rejects_an_unknown_origin(client):
+    response = await client.options(
+        "/session",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert "access-control-allow-origin" not in response.headers

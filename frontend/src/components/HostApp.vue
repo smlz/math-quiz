@@ -377,7 +377,7 @@ onUnmounted(() => {
         <div class="host-app__editor">
           <div class="host-app__editor-header">
             <h2>Quiz-Quelltext (Typst)</h2>
-            <!-- Hash-only href so it stays correct under the GitHub Pages
+            <!-- Hash-only href, so the link survives being served from a
                  subpath (see HostLobby's BASE_URL handling). -->
             <a class="host-app__docs-link" href="#/docs" target="_blank" rel="noopener">Anleitung: Quiz schreiben ↗</a>
           </div>

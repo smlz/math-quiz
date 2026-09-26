@@ -2,10 +2,9 @@ import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
 // https://vite.dev/config/
-export default defineConfig(({ command }) => ({
-  // Deployed to https://smlz.github.io/math-quiz/, so production assets live
-  // under that subpath; the dev server stays at the root.
-  base: command === 'build' ? '/math-quiz/' : '/',
+// Served from the root of https://quiz.smlz.ch, so the default base ('/')
+// is correct in both dev and production.
+export default defineConfig({
   plugins: [vue()],
   server: {
     // Relay API calls to the local backend during dev; the backend serves the
@@ -21,4 +20,4 @@ export default defineConfig(({ command }) => ({
     // different test API and aren't valid vitest test files.
     exclude: ['e2e/**', 'node_modules/**'],
   },
-}))
+})

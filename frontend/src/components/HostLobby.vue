@@ -9,7 +9,9 @@ const props = defineProps<{
 
 defineEmits<{ start: [] }>();
 
-// BASE_URL already has a trailing slash ("/" in dev, "/math-quiz/" on Pages).
+// BASE_URL already has a trailing slash; it is "/" both in dev and on
+// quiz.smlz.ch, but going through it keeps the link correct if the app is
+// ever served from a subpath again.
 const joinBase = `${location.origin}${import.meta.env.BASE_URL}#/join`;
 const joinUrl = `${joinBase}?pin=${props.pin}`;
 const qrDataUrl = ref("");
