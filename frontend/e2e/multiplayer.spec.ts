@@ -87,7 +87,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
 
   // The last question jumps straight from reveal to the final screen -- no
   // intermediate "Rangliste anzeigen" leaderboard step.
-  await host.getByRole("button", { name: "Quiz beenden" }).click();
+  await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
   await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
 
   const rows = host.locator(".leaderboard__row");
@@ -152,7 +152,7 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await host.getByRole("button", { name: "Nächste Frage" }).click();
   await answerOption(ada, 0);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await host.getByRole("button", { name: "Quiz beenden" }).click();
+  await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
 
   await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
   // Ada sees the SSE event before the host's own `advance` call returns, so
