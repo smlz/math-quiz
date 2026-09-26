@@ -74,10 +74,13 @@ npm run preview    # serve the production bundle locally
 The backend needs no build step; deploy it with `uv run fastapi deploy`, or
 with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
 
-The frontend is published to GitHub Pages by
-[.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml) on
-every push to `main`; [frontend/public/CNAME](frontend/public/CNAME) keeps the
-`quiz.smlz.ch` custom domain attached to each deployment.
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml) deploys on every
+push to `main`, but only after the full test suite
+([.github/workflows/test.yml](.github/workflows/test.yml)) passes: the frontend
+goes to GitHub Pages and the backend to FastAPI Cloud (via the
+`FASTAPI_CLOUD_TOKEN` / `FASTAPI_CLOUD_APP_ID` repository secrets).
+[frontend/public/CNAME](frontend/public/CNAME) keeps the `quiz.smlz.ch` custom
+domain attached to each deployment.
 
 ## Running tests
 
