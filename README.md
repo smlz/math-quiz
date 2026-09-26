@@ -7,8 +7,6 @@ A live quiz app for maths lessons. A **host** runs the game on a shared screen
 (projector); **players** join from their own devices with a 6-digit PIN or by
 scanning a QR code.
 
-The app is live at **<https://quiz.smlz.ch>**.
-
 Question prompts and answer options are authored as **Typst** source and
 compiled to SVG in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
 (WASM) — plain text, math and figures (`cetz`) all use the same syntax.
