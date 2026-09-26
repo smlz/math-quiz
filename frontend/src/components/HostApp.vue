@@ -351,9 +351,11 @@ async function nextOrFinish() {
     await startQuestion(currentQuestionIndex.value + 1);
   } else {
     status.value = "finished";
+    // Dropped before the first await: the final screen renders as soon as the
+    // status flips, so anything awaiting it would otherwise still see the entry.
+    clearHostSession();
     await broadcast();
     if (pin.value && hostToken.value) await endSession(pin.value, hostToken.value);
-    clearHostSession();
     disconnect();
   }
 }
