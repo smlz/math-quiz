@@ -7,11 +7,14 @@
   </defs>
   <text
     x="32"
-    y="47"
+    y="50"
     text-anchor="middle"
-    font-family="'Segoe UI', Arial, sans-serif"
-    font-size="52"
-    font-weight="800"
+    font-family="Arial, sans-serif"
+    font-size="67"
+    font-weight="900"
+    paint-order="stroke fill"
+    stroke="rgba(255,255,255,0.45)"
+    stroke-width="1.5"
     fill="url(#qGradient)"
   >Q</text>
 </svg>
