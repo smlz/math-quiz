@@ -19,7 +19,7 @@ const qrDataUrl = ref("");
 watch(
   () => props.pin,
   async (pin) => {
-    qrDataUrl.value = await QRCode.toDataURL(`${joinBase}?pin=${pin}`, { width: 220 });
+    qrDataUrl.value = await QRCode.toDataURL(`${joinBase}?pin=${pin}`, { width: 400 });
   },
   { immediate: true },
 );
@@ -59,7 +59,7 @@ watch(
   margin: 0.5rem 0;
 }
 .host-lobby__qr {
-  margin: 1rem auto;
+  margin: 3rem auto;
   display: block;
 }
 .host-lobby__count {
