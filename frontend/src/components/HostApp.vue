@@ -104,6 +104,12 @@ const isLastQuestion = computed(
   () => !!quiz.value && currentQuestionIndex.value === quiz.value.questions.length - 1,
 );
 
+const questionProgress = computed(() =>
+  quiz.value && currentQuestionIndex.value >= 0
+    ? `${currentQuestionIndex.value + 1} / ${quiz.value.questions.length}`
+    : "",
+);
+
 const standings = computed<LeaderboardEntry[]>(() => {
   const sorted = [...roster.entries()]
     .map(([player_id, nickname]) => ({ player_id, nickname, score: scores.get(player_id) ?? 0 }))
@@ -345,18 +351,64 @@ async function showLeaderboard() {
   await broadcast();
 }
 
+async function finishQuiz() {
+  status.value = "finished";
+  // Dropped before the first await: the final screen renders as soon as the
+  // status flips, so anything awaiting it would otherwise still see the entry.
+  clearHostSession();
+  await broadcast();
+  if (pin.value && hostToken.value) await endSession(pin.value, hostToken.value);
+  disconnect();
+}
+
+// The last question has no next round to show a leaderboard before, so it
+// goes straight from reveal to the final screen.
+async function afterReveal() {
+  if (isLastQuestion.value) {
+    await finishQuiz();
+  } else {
+    await showLeaderboard();
+  }
+}
+
 async function nextOrFinish() {
   if (!quiz.value) return;
   if (currentQuestionIndex.value + 1 < quiz.value.questions.length) {
     await startQuestion(currentQuestionIndex.value + 1);
   } else {
-    status.value = "finished";
-    // Dropped before the first await: the final screen renders as soon as the
-    // status flips, so anything awaiting it would otherwise still see the entry.
-    clearHostSession();
-    await broadcast();
-    if (pin.value && hostToken.value) await endSession(pin.value, hostToken.value);
+    await finishQuiz();
+  }
+}
+
+/** Discards all in-memory session state and returns to the quiz editor, as
+ * if no session had ever been created. */
+function resetToSetup() {
+  status.value = "setup";
+  pin.value = null;
+  hostToken.value = null;
+  quiz.value = null;
+  currentQuestionIndex.value = -1;
+  correctOrder.value = [];
+  roster.clear();
+  scores.clear();
+  answers.clear();
+}
+
+/** Host-initiated early abort, available any time a session is running.
+ * Unlike a normal finish, this skips the leaderboard entirely and drops the
+ * host straight back to the editor -- there is nothing to show a rank for. */
+async function endQuizNow() {
+  if (!pin.value || !hostToken.value) return;
+  if (!window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
+  // Tells connected players the session is over so they leave their current
+  // screen too, rather than just going silent on them.
+  await publishState(pin.value, hostToken.value, { phase: "finished", question_index: null, players: [] });
+  clearHostSession();
+  try {
+    await endSession(pin.value, hostToken.value);
+  } finally {
     disconnect();
+    resetToSetup();
   }
 }
 
@@ -415,18 +467,26 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'lobby' && pin">
       <div class="host-app__panel">
-        <HostLobby :pin="pin" :nicknames="nicknames" @start="startQuestion(0)" />
+        <HostLobby :pin="pin" :nicknames="nicknames" @start="startQuestion(0)" @end="endQuizNow" />
       </div>
     </template>
 
     <template v-else-if="status === 'question' && currentQuestion">
       <QuestionCard :question="currentQuestion" :reveal-correct="false" />
       <button type="button" @click="reveal">{{ answerButtonLabel }}</button>
+      <div class="host-app__footer">
+        <span class="host-app__progress">{{ questionProgress }}</span>
+        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+      </div>
     </template>
 
     <template v-else-if="status === 'reveal' && currentQuestion">
       <QuestionCard :question="currentQuestion" :reveal-correct="true" :counts="countsArray" />
-      <button type="button" @click="showLeaderboard">Rangliste anzeigen</button>
+      <button type="button" @click="afterReveal">{{ isLastQuestion ? "Endergebnis anzeigen" : "Rangliste anzeigen" }}</button>
+      <div class="host-app__footer">
+        <span class="host-app__progress">{{ questionProgress }}</span>
+        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+      </div>
     </template>
 
     <template v-else-if="status === 'leaderboard'">
@@ -434,11 +494,18 @@ onUnmounted(() => {
         <HostLeaderboard :standings="standings" :finished="false" />
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
+      <div class="host-app__footer">
+        <span class="host-app__progress">{{ questionProgress }}</span>
+        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+      </div>
     </template>
 
     <template v-else-if="status === 'finished'">
       <div class="host-app__panel">
         <HostLeaderboard :standings="standings" :finished="true" />
+      </div>
+      <div class="host-app__footer">
+        <button type="button" class="host-app__end" @click="resetToSetup">Neues Quiz erstellen</button>
       </div>
     </template>
   </div>
@@ -449,7 +516,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100dvh;
   margin: 0;
-  padding: 1rem;
+  padding: 1rem 1rem 0rem 1rem;
   box-sizing: border-box;
   text-align: left;
   display: flex;
@@ -471,6 +538,28 @@ onUnmounted(() => {
   color: #fff;
   font-weight: 600;
   border-radius: 4px;
+}
+.host-app__end {
+  padding: 0.2rem 0.4rem;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  min-height: 1rem;
+}
+.host-app__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 0.4rem;
+}
+.host-app__progress {
+  margin-right: auto;
+  padding: 0.2rem 0.4rem;
+  color: #888;
+  font-size: 0.8rem;
 }
 .host-app__setup {
   display: grid;

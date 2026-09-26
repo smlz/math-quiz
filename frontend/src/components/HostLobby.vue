@@ -7,7 +7,7 @@ const props = defineProps<{
   nicknames: string[];
 }>();
 
-defineEmits<{ start: [] }>();
+defineEmits<{ start: []; end: [] }>();
 
 // BASE_URL already has a trailing slash; it is "/" both in dev and on
 // quiz.smlz.ch, but going through it keeps the link correct if the app is
@@ -27,7 +27,7 @@ watch(
 
 <template>
   <section class="host-lobby">
-    <h2>Beitreten auf {{ joinBase }}</h2>
+    <h2>Beitreten auf <a :href="joinBase">{{ joinBase }}</a></h2>
     <p class="host-lobby__pin">{{ pin }}</p>
     <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
     <p class="host-lobby__count">{{ nicknames.length }} Spieler:innen beigetreten</p>
@@ -37,6 +37,7 @@ watch(
     <button type="button" class="host-lobby__start" :disabled="nicknames.length === 0" @click="$emit('start')">
       Frage starten
     </button>
+    <button type="button" class="host-lobby__end" @click="$emit('end')">Quiz abbrechen</button>
   </section>
 </template>
 
@@ -51,6 +52,17 @@ watch(
 .host-lobby__start {
   width: 100%;
   margin-top: auto;
+}
+.host-lobby__end {
+  align-self: center;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.4rem;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  min-height: 1rem;
 }
 .host-lobby__pin {
   font-size: 3rem;

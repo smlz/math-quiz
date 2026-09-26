@@ -85,8 +85,10 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
   await expect(bo.locator(".player-app__reveal-wrong")).toContainText("+0 Punkte");
 
-  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
-  await expect(host.getByRole("button", { name: "Quiz beenden" })).toBeVisible();
+  // The last question jumps straight from reveal to the final screen -- no
+  // intermediate "Rangliste anzeigen" leaderboard step.
+  await host.getByRole("button", { name: "Quiz beenden" }).click();
+  await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
 
   const rows = host.locator(".leaderboard__row");
   await expect(rows).toHaveCount(2);
@@ -94,9 +96,6 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(rows.first()).toContainText("36");
   await expect(rows.nth(1)).toContainText("Bo");
   await expect(rows.nth(1)).toContainText("11");
-
-  await host.getByRole("button", { name: "Quiz beenden" }).click();
-  await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
   await expect(ada.getByRole("heading", { name: "Quiz beendet!" })).toBeVisible();
   await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
   await expect(bo.getByText("Du hast auf Platz 2 mit 11 Punkten abgeschlossen")).toBeVisible();
@@ -153,7 +152,6 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await host.getByRole("button", { name: "Nächste Frage" }).click();
   await answerOption(ada, 0);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   await host.getByRole("button", { name: "Quiz beenden" }).click();
 
   await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
