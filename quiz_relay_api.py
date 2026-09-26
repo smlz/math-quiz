@@ -38,8 +38,6 @@ Each session has two streams:
 Everything is mounted under `/api/v1`, except the `/` health check.
 """
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import collections
