@@ -18,8 +18,7 @@ itself is read off the host screen.
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
 described in §3.
 
-The app is vibe coded. The backend is quite rough, and I am surprised it works
-at all. Use at your own risk!
+This app is mostly vibe coded. Use at your own risk!
 
 ## Architecture
 
