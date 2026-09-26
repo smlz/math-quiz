@@ -22,9 +22,8 @@ This app is mostly vibe coded. Use at your own risk!
 
 | Part | Location | Notes |
 |------|----------|-------|
-| Backend | [quiz_relay_api.py](quiz_relay_api.py) | FastAPI. A stateless message relay under `/api/v1`: it mints session PINs and signed tokens, then fans opaque JSON between two SSE streams. It stores nothing — not the quiz, not the answers, not even the list of sessions — so a restart costs a few seconds of reconnect rather than the game. See [SPEC.md](SPEC.md). |
-| Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript. Hash routes: `#/join` mounts the player app, anything else the host app — so any static file server can host it without SPA rewrite rules. The host setup screen shows a live side-by-side preview of the quiz. All quiz state lives in the host's browser tab. |
-| Database | none | Deliberately. The host re-broadcasts a full state snapshot every few seconds, so anyone who missed something catches up from the host instead of from stored history. |
+| Backend | [quiz_relay_api.py](quiz_relay_api.py) | A stateless FastAPI message relay.  It stores nothing, only relays opaque JSON. No database.|
+| Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript.|
 
 ## Prerequisites
 
@@ -46,11 +45,6 @@ Set `SERVER_SECRET` in production so tokens minted before a restart stay
 valid; without it a random one is generated per process, which is what you
 want locally and in tests.
 
-Browsers may only call the relay from an allowlisted origin: the deployed
-frontend (`https://quiz.smlz.ch`) plus the local Vite dev/preview origins.
-Set `ALLOWED_ORIGINS` (comma-separated) to replace that list, e.g. for a
-staging deployment.
-
 **2. Frontend** (from `frontend/`, serves on `http://127.0.0.1:5173`):
 
 ```powershell
@@ -60,7 +54,7 @@ npm run dev
 ```
 
 Vite proxies `/api` to the backend, so open only the Vite URL in the browser.
-The host screen is at `/`, players join at `/#/join` (the lobby's QR code
+The host screen is at `/`, players join at `/join` (the lobby's QR code
 links there with the PIN prefilled).
 
 ## Building
@@ -74,13 +68,8 @@ npm run preview    # serve the production bundle locally
 The backend needs no build step; deploy it with `uv run fastapi deploy`, or
 with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
 
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml) deploys on every
-push to `main`, but only after the full test suite
-([.github/workflows/test.yml](.github/workflows/test.yml)) passes: the frontend
-goes to GitHub Pages and the backend to FastAPI Cloud (via the
-`FASTAPI_CLOUD_TOKEN` / `FASTAPI_CLOUD_APP_ID` repository secrets).
-[frontend/public/CNAME](frontend/public/CNAME) keeps the `quiz.smlz.ch` custom
-domain attached to each deployment.
+The [deploy workflow](.github/workflows/deploy.yml) deploys on every push to
+`main`, after the full [test suite](.github/workflows/test.yml) has passed.
 
 ## Running tests
 
@@ -107,7 +96,7 @@ npm run test:e2e
 ```
 
 The Playwright config starts both the backend and the Vite dev server itself,
-using a separate `e2e-test.db`, so no servers need to be running beforehand.
+so no servers need to be running beforehand.
 
 All three suites run automatically on every push and pull request via
 [.github/workflows/test.yml](.github/workflows/test.yml). [Dependabot](.github/dependabot.yml)

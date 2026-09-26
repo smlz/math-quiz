@@ -161,7 +161,7 @@ reveal state. The page is 1280pt × 720pt, so one Typst point maps to one
 CSS pixel of the host screen's canonical 1280×720 canvas.
 
 This makes the quiz file self-sufficient: it can be proof-read, printed or
-projected with no app and no server involved. The app's docs page (`#/docs`)
+projected with no app and no server involved. The app's docs page (`/docs`)
 offers `quiz.typ` and a minimal starter quiz as downloads.
 
 ### 3.4 How the app reads a quiz file
@@ -193,8 +193,8 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
 
 1. **Lobby**: host creates a session → the relay mints a 6-digit numeric PIN
    and the host renders a QR code encoding a join URL
-   (`https://.../#/join?pin=123456` — routes live in the URL hash so the
-   frontend can be served by any static file server without rewrite rules).
+   (`https://.../join?pin=123456` — a `404.html` redirect trick makes real
+   paths like this work on GitHub Pages, which has no server-side rewrites).
    Players join and choose a nickname, which reaches the host as an ordinary
    message; they appear in the host's lobby view, and see themselves
    confirmed in the next snapshot. Nicknames are stored in the client's
