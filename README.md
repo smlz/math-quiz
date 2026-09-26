@@ -14,7 +14,7 @@ Player devices only ever show four coloured A/B/C/D buttons; the question
 itself is read off the host screen.
 
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
-described in §3.
+described in [§3](SPEC.md#3-question-authoring).
 
 This app is mostly vibe coded. Use at your own risk!
 
