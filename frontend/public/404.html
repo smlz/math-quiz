@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quiz</title>
+    <script>
+      // Single-Page Apps for GitHub Pages, MIT licensed
+      // https://github.com/rafgraph/spa-github-pages
+      // GitHub Pages has no server-side rewrites, so a direct hit on e.g.
+      // /join?pin=123 or a hard refresh 404s. This script re-encodes the
+      // path into a query string and redirects to "/", where index.html's
+      // matching decode script restores the real path via pushState before
+      // the app's router (App.vue) ever reads location.pathname.
+      var pathSegmentsToKeep = 0; // quiz.smlz.ch serves from the domain root
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname
+          .split('/')
+          .slice(0, 1 + pathSegmentsToKeep)
+          .join('/') +
+        '/?/' +
+        l.pathname
+          .slice(1)
+          .split('/')
+          .slice(pathSegmentsToKeep)
+          .join('/')
+          .replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

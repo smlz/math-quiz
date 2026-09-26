@@ -4,10 +4,10 @@ import PlayerApp from './components/PlayerApp.vue'
 import QuizDocs from './components/QuizDocs.vue'
 
 // No router dependency for v1: the host runs at "/" and players join via a
-// "/#/join?pin=..." link (SPEC.md §4.1/§8), so a plain hash check is enough
-// to pick which app to mount. Routes live in the hash so any static file
-// server can serve the app without SPA rewrite rules.
-const route = location.hash.replace(/^#/, '')
+// "/join?pin=..." link (SPEC.md §4.1/§8). Real paths work on GitHub Pages
+// thanks to public/404.html's redirect trick (see index.html's matching
+// decode script), so there's no need to hide routes in the hash anymore.
+const route = location.pathname
 const isPlayerRoute = route.startsWith('/join')
 const isDocsRoute = route.startsWith('/docs')
 </script>

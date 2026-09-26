@@ -5,7 +5,7 @@ import { loadPlayerSession, savePlayerSession, type StoredPlayerSession } from "
 
 const NICKNAME_STORAGE_KEY = "math-quiz-nickname";
 
-const params = new URLSearchParams(location.hash.split("?")[1] ?? "");
+const params = new URLSearchParams(location.search);
 const pin = ref(params.get("pin") ?? "");
 const storedNickname = localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "";
 const nickname = ref(storedNickname);
