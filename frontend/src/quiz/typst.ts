@@ -1,9 +1,8 @@
 // Thin wrapper around typst.ts (https://github.com/Myriad-Dreamin/typst.ts),
 // the client-side Typst compiler/renderer (SPEC.md §2). There is no bundled
-// npm/Vite integration here -- per the typst-experiments/browser-demo.html
-// feasibility POC, we load the "lite" all-in-one bundle from jsdelivr at
-// runtime (it fetches its WASM modules, fonts, and any `@preview` packages
-// such as cetz from jsdelivr/packages.typst.org on demand, with no
+// npm/Vite integration here, we load the "lite" all-in-one bundle from
+// jsdelivr at runtime (it fetches its WASM modules, fonts, and any `@preview`
+// packages such as cetz from jsdelivr/packages.typst.org on demand, with no
 // offline/self-hosted fallback for v1 -- SPEC.md §11).
 
 const TYPST_SCRIPT_URL =

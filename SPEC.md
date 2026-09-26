@@ -33,7 +33,7 @@ or QR code and answer questions in real time.
 | Database         | None. See §6.                                                      |
 | Real-time sync   | Server-Sent Events (SSE): two streams per session, see §4.2         |
 | Frontend         | Vue 3 (Composition API) + Vite                                     |
-| Rendering        | Typst: the quiz file itself is a Typst document (§3.2), compiled and rendered to SVG or canvas client-side via `typst.ts` (WASM); question/answer text, math, and figures (e.g. via the `cetz` package) all go through this one pipeline — see `typst-experiments/` for a feasibility POC |
+| Rendering        | Typst: the quiz file itself is a Typst document (§3.2), compiled and rendered to SVG or canvas client-side via `typst.ts` (WASM); question/answer text, math, and figures (e.g. via the `cetz` package) all go through this one pipeline |
 | QR code          | Generated client-side JS on the teacher page |
 | Hosting          | Backend on FastAPI Cloud, frontend on GitHub Pages under the custom domain `https://quiz.smlz.ch` (served from the site root, so Vite's `base` stays `/`) |
 
@@ -50,11 +50,10 @@ independent of the quiz use case, are in Appendix A.
   answers are worth a hardcoded 12/11/10 points by submission order (§5),
   and each question's prompt/answer-grid space split defaults to an even
   `0.5` (§3.2, overridable per question) — neither is configurable.
-- All question content — the prompt and all four answer options — is
-  **Typst** source (see §2), rendered client-side via `typst.ts`. Typst
-  covers plain text, inline/block math, and figures (e.g. via the `cetz`
-  package, per the `typst-experiments/` POC) in one uniform syntax, so
-  there is no separate math-vs-figure mechanism.
+- All question content — the prompt and all four answer options — is **Typst**
+  source (see §2), rendered client-side via `typst.ts`. Typst covers plain
+  text, inline/block math, and figures (e.g. via the `cetz` package) in one
+  uniform syntax, so there is no separate math-vs-figure mechanism.
 - Because the quiz file is a normal Typst document, authoring uses ordinary
   Typst tooling — the `typst` CLI, or VS Code with a Typst extension
   (Tinymist) giving syntax highlighting, diagnostics and live preview. No
@@ -562,8 +561,8 @@ deployment or scale-to-zero purges the whole set.
   `cetz` figures (may need a fallback pre-rendered SVG path for heavy
   diagrams).
 - `typst.ts` fetches `@preview` packages (e.g. `cetz`) and WASM modules from
-  `packages.typst.org`/a CDN at render time (per the `typst-experiments/`
-  POC) — no offline/self-hosted fallback is specified yet for v1.
+  `packages.typst.org`/a CDN at render time — no offline/self-hosted fallback
+  is specified yet for v1.
 
 ## 12. Implementation strategy
 
