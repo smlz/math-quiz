@@ -89,7 +89,7 @@ const PLOT_EXAMPLE = `#question(
 const VENN_EXAMPLE = `#question(
   correct: "A",
   answer-area-fraction: 0.7,
-  prompt: [Welches Diagramm zeigt den Durchschnitt $A inter B$?],
+  prompt: [Welches Diagramm zeigt die Schnittmenge $A inter B$?],
   options: (
     [#venn(white, hl, white)],
     [#venn(hl, white, white)],
