@@ -10,11 +10,11 @@
     y="50"
     text-anchor="middle"
     font-family="Arial, sans-serif"
-    font-size="67"
+    font-size="66"
     font-weight="900"
     paint-order="stroke fill"
     stroke="rgba(255,255,255,0.55)"
-    stroke-width="1.9"
+    stroke-width="3"
     fill="url(#qGradient)"
   >Q</text>
 </svg>
