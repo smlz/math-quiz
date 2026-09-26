@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Typst in the browser — Venn diagram test</title>
+  <!--
+    Client-side Typst compiler/renderer, compiled to WebAssembly:
+    https://github.com/Myriad-Dreamin/typst.ts
+
+    The "lite" bundle excludes the (large) wasm modules and fonts from the
+    JS bundle itself; they are instead fetched on demand from jsdelivr, which
+    is configured below via setCompilerInitOptions/setRendererInitOptions.
+  -->
+  <script
+    type="module"
+    src="https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js"
+    id="typst"
+  ></script>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      height: 100vh;
+    }
+    header {
+      padding: 0.6rem 1rem;
+      background: #1e1e2e;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1rem; margin: 0; flex: 1; }
+    #status { font-size: 0.85rem; opacity: 0.85; }
+    main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    #editor-pane, #preview-pane {
+      flex: 1 1 50%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #editor-pane { border-right: 1px solid #ccc; }
+    #input {
+      flex: 1;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 1rem;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      tab-size: 2;
+    }
+    #preview-pane {
+      overflow: auto;
+      background: #f4f4f4;
+      align-items: center;
+      padding: 1rem;
+    }
+    #content { background: #fff; box-shadow: 0 0 8px rgba(0,0,0,0.15); }
+    #content svg { display: block; max-width: 100%; height: auto; }
+    #error {
+      white-space: pre-wrap;
+      color: #b00020;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      padding: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Typst.ts feasibility test — three-set Venn diagram (cetz-venn)</h1>
+    <span id="status">loading compiler…</span>
+  </header>
+  <main>
+    <div id="editor-pane">
+      <textarea id="input" spellcheck="false">// Typst evaluation: three-set Venn diagram via cetz-venn (built on cetz).
+#import "@preview/cetz:0.5.2": canvas, draw
+#import "@preview/cetz-venn:0.2.0": venn3
+
+#set page(width: auto, height: auto, margin: 1.5cm)
+
+#set page(width: 10cm, height: auto, margin: 1cm)
+
+#set text(font: "New Computer Modern", size: 11pt)
+
+#align(center, text(size: 14pt, weight: "bold")[Symmetric difference of three sets])
+
+#v(0.6cm)
+
+#align(center, canvas({
+  import draw: *
+
+  let shaded = rgb("#ff6b6b").lighten(20%)
+  let plain = white
+
+  // Shade the symmetric difference A △ B △ C: elements in an odd number
+  // of the three sets, i.e. "only A/B/C" plus the triple overlap, while
+  // the pairwise-only regions stay white.
+  venn3(
+    a-fill: shaded, b-fill: shaded, c-fill: shaded,
+    ab-fill: plain, bc-fill: plain, ac-fill: plain,
+    abc-fill: shaded,
+    stroke: 1pt + black,
+    padding: 1.5em,
+    name: "venn",
+  )
+
+  content("venn.a", $A$)
+  content("venn.b", $B$)
+  content("venn.c", $C$)
+}))
+
+#v(0.6cm)
+
+#align(center)[
+  Shaded (red) region: elements belonging to an *odd* number of the three
+  sets -- the symmetric difference $A △ B △ C$. It consists of the three
+  "exactly one set" slivers plus the central triple overlap, while the
+  three "exactly two sets" lens regions are left white.
+]
+</textarea>
+    </div>
+    <div id="preview-pane">
+      <div id="content"></div>
+      <div id="error"></div>
+    </div>
+  </main>
+
+  <script>
+    const input = document.getElementById('input');
+    const contentDiv = document.getElementById('content');
+    const errorDiv = document.getElementById('error');
+    const statusEl = document.getElementById('status');
+
+    let debounceTimer;
+    const preview = mainContent => {
+      const start = performance.now();
+      $typst
+        .svg({ mainContent })
+        .then(svg => {
+          errorDiv.textContent = '';
+          contentDiv.innerHTML = svg;
+          const ms = (performance.now() - start).toFixed(0);
+          statusEl.textContent = `compiled in ${ms} ms`;
+        })
+        .catch(err => {
+          contentDiv.innerHTML = '';
+          errorDiv.textContent = String(err?.message ?? err);
+          statusEl.textContent = 'compile error';
+        });
+    };
+
+    // Loads the wasm modules from jsdelivr since we use the "lite" bundle.
+    document.getElementById('typst').addEventListener('load', function () {
+      $typst.setCompilerInitOptions({
+        getModule: () =>
+          'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm',
+      });
+      $typst.setRendererInitOptions({
+        getModule: () =>
+          'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm',
+      });
+
+      // Note: no explicit package registry setup is needed. When neither an
+      // access model nor a package registry provider has been configured,
+      // typst.ts automatically fetches "@preview" packages (such as cetz and
+      // cetz-venn) straight from https://packages.typst.org in the browser.
+
+      statusEl.textContent = 'compiling… (first run downloads cetz/cetz-venn + fonts)';
+
+      input.oninput = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => preview(input.value), 400);
+      };
+
+      preview(input.value);
+    });
+  </script>
+</body>
+</html>
