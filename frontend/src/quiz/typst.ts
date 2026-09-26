@@ -58,9 +58,15 @@ let renderQueue: Promise<unknown> = Promise.resolve();
 
 /** Compiles Typst `source` and resolves to a self-contained SVG string.
  * Quiz authors write bare content (SPEC.md §3.2, no page setup of their
- * own), so it's wrapped in an auto-sized, margin-trimmed page here --
- * otherwise typst.ts's default A4 page would render as a mostly-blank SVG. */
+ * own), so it's wrapped in an auto-sized page here -- otherwise typst.ts's
+ * default A4 page would render as a mostly-blank SVG. The page margin is
+ * zero on purpose: the SVG is scaled with `object-fit: contain` to fill its
+ * box, so any margin baked into the image is dead space that shrinks the
+ * content (a 0.4em margin made a single digit render at under half size).
+ * Padding around the content is the surrounding CSS box's job. */
 export function renderTypst(source: string): Promise<string> {
+  // previous version
+  //const wrapped = `#set page(width: auto, height: auto, margin: 0mm)\n#set text(size: 11pt)\n${source}`;
   const wrapped = `#set page(width: auto, height: auto, margin: 0.4em)\n#set text(size: 11pt)\n${source}`;
 
   const run = async () => {

@@ -2,54 +2,40 @@ import { describe, expect, it } from "vitest";
 import { parseQuiz } from "./parseQuiz";
 import { QuizParseError } from "./errors";
 
-const VALID_QUIZ = `correct_answer: C
+const HEADER = `#import "quiz.typ": *
+#show: quiz
+`;
 
-\`\`\`typst
-What is $x$ if $2x + 3 = 11$?
-\`\`\`
-
-\`\`\`typst-option
-$2$
-\`\`\`
-
-\`\`\`typst-option
-$3$
-\`\`\`
-
-\`\`\`typst-option
-$4$
-\`\`\`
-
-\`\`\`typst-option
-$5$
-\`\`\`
-
----
-
-correct_answer: B
-answer_area_fraction: 0.35
-
-\`\`\`typst
-Which graph shows $y = x^2$?
-\`\`\`
-
-\`\`\`typst-option
+const VALID_QUIZ = `${HEADER}
 #import "@preview/cetz:0.5.2": canvas, draw
-#canvas({ import draw: *; line((-2,0), (2,0)) })
-\`\`\`
+#import "@preview/cetz-plot:0.1.4": plot
 
-\`\`\`typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#canvas({ import draw: *; plot.plot(size: (3,3), { plot.add(domain: (-2,2), x => x*x) }) })
-\`\`\`
+#let graph(body) = canvas(length: 1cm, body)
 
-\`\`\`typst-option
-...
-\`\`\`
+#question(
+  correct: "C",
+  prompt: [
+    What is $x$ if $2x + 3 = 11$?
+  ],
+  options: (
+    [$2$],
+    [$3$],
+    [$4$],
+    [$5$],
+  ),
+)
 
-\`\`\`typst-option
-...
-\`\`\`
+#question(
+  correct: "B",
+  answer-area-fraction: 0.35,
+  prompt: [Which graph shows $y = x^2$?],
+  options: (
+    [#graph({ draw.line((-2, 0), (2, 0)) })],
+    [#graph({ plot.plot(size: (3, 3), { plot.add(domain: (-2, 2), x => x * x) }) })],
+    [...],
+    [...],
+  ),
+)
 `;
 
 describe("parseQuiz", () => {
@@ -57,87 +43,118 @@ describe("parseQuiz", () => {
     const quiz = parseQuiz(VALID_QUIZ);
 
     expect(quiz.questions).toHaveLength(2);
+    expect(quiz.preamble).toContain('#import "@preview/cetz:0.5.2"');
+    // The template header is layout-only and must not reach a snippet (§3.4).
+    expect(quiz.preamble).not.toContain("#show: quiz");
 
     const [q1, q2] = quiz.questions;
 
     expect(q1.id).toBe("q1");
     expect(q1.promptTypst).toContain("2x + 3 = 11");
-    expect(q1.options.map((o) => o.typst)).toEqual(["$2$", "$3$", "$4$", "$5$"]);
     expect(q1.correctIndex).toBe(2);
     expect(q1.answerAreaFraction).toBe(0.5); // default, no override
 
     expect(q2.id).toBe("q2");
     expect(q2.correctIndex).toBe(1);
-    expect(q2.options[1].typst).toContain("x*x");
+    expect(q2.options[1].typst).toContain("x * x");
     expect(q2.answerAreaFraction).toBe(0.35); // per-question override
   });
 
-  it("rejects a question with a missing correct_answer", () => {
-    const quiz = VALID_QUIZ.replace("correct_answer: C", "");
+  it("prepends the preamble to every snippet so author macros resolve", () => {
+    const [q1] = parseQuiz(VALID_QUIZ).questions;
+
+    expect(q1.promptTypst.startsWith('#import "@preview/cetz:0.5.2"')).toBe(true);
+    expect(q1.promptTypst.endsWith("What is $x$ if $2x + 3 = 11$?")).toBe(true);
+    expect(q1.options.map((o) => o.typst.split("\n").at(-1))).toEqual(["$2$", "$3$", "$4$", "$5$"]);
+  });
+
+  it("rejects a file without the template header", () => {
+    const quiz = VALID_QUIZ.replace(HEADER, "");
+    expect(() => parseQuiz(quiz)).toThrow(/Missing template header/);
+  });
+
+  it("rejects a question with a missing correct", () => {
+    const quiz = VALID_QUIZ.replace('correct: "C",', "");
     expect(() => parseQuiz(quiz)).toThrow(QuizParseError);
     try {
       parseQuiz(quiz);
     } catch (error) {
-      expect((error as QuizParseError).issues.join()).toMatch(/correct_answer.*missing/);
+      expect((error as QuizParseError).issues.join()).toMatch(/'correct' missing/);
     }
   });
 
-  it("rejects a correct_answer outside A-D", () => {
-    const quiz = VALID_QUIZ.replace("correct_answer: C", "correct_answer: E");
-    expect(() => parseQuiz(quiz)).toThrow(/not one of A-D/);
+  it("rejects a correct outside A-D", () => {
+    const quiz = VALID_QUIZ.replace('correct: "C"', 'correct: "E"');
+    expect(() => parseQuiz(quiz)).toThrow(/'correct' missing or not one of "A"-"D"/);
   });
 
-  it("rejects an unrecognized preface key", () => {
-    const quiz = VALID_QUIZ.replace("correct_answer: C", "correct_answer: C\nfoo: bar");
-    expect(() => parseQuiz(quiz)).toThrow(/unrecognized preface key 'foo'/);
+  it("rejects an unrecognized argument", () => {
+    const quiz = VALID_QUIZ.replace('correct: "C",', 'correct: "C",\n  points: 20,');
+    expect(() => parseQuiz(quiz)).toThrow(/unrecognized argument 'points'/);
   });
 
-  it("rejects an answer_area_fraction outside (0, 1)", () => {
-    const quiz = VALID_QUIZ.replace("answer_area_fraction: 0.35", "answer_area_fraction: 1.5");
-    expect(() => parseQuiz(quiz)).toThrow(/answer_area_fraction.*\(0, 1\)/);
+  it("rejects an answer-area-fraction outside (0, 1)", () => {
+    const quiz = VALID_QUIZ.replace("answer-area-fraction: 0.35", "answer-area-fraction: 1.5");
+    expect(() => parseQuiz(quiz)).toThrow(/answer-area-fraction.*\(0, 1\)/);
   });
 
-  it("rejects a quiz missing a prompt block", () => {
-    const quiz = `correct_answer: A
-
-\`\`\`typst-option
-1
-\`\`\`
-
-\`\`\`typst-option
-2
-\`\`\`
-
-\`\`\`typst-option
-3
-\`\`\`
-
-\`\`\`typst-option
-4
-\`\`\`
+  it("rejects a question without a prompt", () => {
+    const quiz = `${HEADER}
+#question(
+  correct: "A",
+  options: ([1], [2], [3], [4]),
+)
 `;
-    expect(() => parseQuiz(quiz)).toThrow(/expected exactly one prompt block, found 0/);
+    expect(() => parseQuiz(quiz)).toThrow(/'prompt' missing or not a content block/);
   });
 
   it("rejects a question with fewer than 4 options", () => {
-    const quiz = `correct_answer: A
-
-\`\`\`typst
-Only one option?
-\`\`\`
-
-\`\`\`typst-option
-1
-\`\`\`
+    const quiz = `${HEADER}
+#question(
+  correct: "A",
+  prompt: [Only one option?],
+  options: ([1],),
+)
 `;
     expect(() => parseQuiz(quiz)).toThrow(/expected exactly 4 options, found 1/);
   });
 
   it("rejects a question with more than 4 options", () => {
-    const quiz = VALID_QUIZ.replace(
-      "```typst-option\n$5$\n```",
-      "```typst-option\n$5$\n```\n\n```typst-option\n$6$\n```",
-    );
+    const quiz = VALID_QUIZ.replace("    [$5$],\n", "    [$5$],\n    [$6$],\n");
     expect(() => parseQuiz(quiz)).toThrow(/expected exactly 4 options, found 5/);
+  });
+
+  it("reports an unterminated #question(...) call", () => {
+    const quiz = `${HEADER}
+#question(
+  correct: "A",
+  prompt: [Missing a closing paren],
+  options: ([1], [2], [3], [4]),
+`;
+    expect(() => parseQuiz(quiz)).toThrow(/unterminated/);
+  });
+
+  it("rejects stray content between questions", () => {
+    const quiz = VALID_QUIZ.replace("\n#question(\n  correct: \"B\"", "\nSome stray text\n\n#question(\n  correct: \"B\"");
+    expect(() => parseQuiz(quiz)).toThrow(/unexpected content before the question/);
+  });
+
+  it("keeps commas, brackets and quotes inside content blocks", () => {
+    const quiz = `${HEADER}
+#question(
+  correct: "A",
+  prompt: [A set: ${"$"}{ 1, 2, 3 }${"$"}, and a "quote" (with parens).],
+  options: ([a, b], [\\[not a block\\]], [#text(fill: rgb("#ff0000"))[red, bold]], [d]),
+)
+`;
+    const [q1] = parseQuiz(quiz).questions;
+
+    expect(q1.promptTypst).toBe('A set: ${ 1, 2, 3 }$, and a "quote" (with parens).');
+    expect(q1.options.map((o) => o.typst)).toEqual([
+      "a, b",
+      "\\[not a block\\]",
+      '#text(fill: rgb("#ff0000"))[red, bold]',
+      "d",
+    ]);
   });
 });

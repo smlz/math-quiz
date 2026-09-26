@@ -2,14 +2,15 @@
 // TypeScript/camelCase for the actual (Vue) implementation.
 
 export interface AnswerOption {
-  /** Typst source; may contain text, math, and/or a figure (SPEC.md §3.2). */
+  /** Renderable Typst source: the quiz's preamble followed by this option's
+   * content block (SPEC.md §3.4). */
   typst: string;
 }
 
 export interface QuestionState {
   /** e.g. "q1"; derived from 1-based position in the file (SPEC.md §6.2). */
   id: string;
-  /** Typst source for the prompt; may contain text, math, and/or a figure. */
+  /** Renderable Typst source for the prompt, preamble included (§3.4). */
   promptTypst: string;
   /** Always exactly 4 answer options, in A/B/C/D order (SPEC.md §3.1). */
   options: AnswerOption[];
@@ -21,6 +22,10 @@ export interface QuestionState {
 }
 
 export interface ParsedQuiz {
+  /** The author's own imports and macros, without the template header
+   * (SPEC.md §3.4). Already baked into every snippet above; kept here so the
+   * host can show/round-trip it. */
+  preamble: string;
   questions: QuestionState[];
 }
 

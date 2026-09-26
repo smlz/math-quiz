@@ -7,6 +7,11 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
+    fs: {
+      // `typst/` (the quiz template and example quiz) lives at the repo root
+      // and is imported with `?raw`, so the dev server must be able to read it.
+      allow: ['..'],
+    },
     // Relay API calls to the local backend during dev; the backend serves the
     // same `/api/v1` paths, so nothing is rewritten. In production the
     // frontend targets the deployed relay directly.

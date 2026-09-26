@@ -8,8 +8,8 @@ or QR code and answer questions in real time.
 
 - Host creates/selects a quiz (a static, pre-authored question set) and
   starts a live **session**.
-- Question sets are authored as quiz files (one Typst snippet per
-  question/answer, see §3), pasted into a textbox.
+- Question sets are authored as plain Typst documents with standard Typst
+  tooling (see §3), then pasted into a textbox.
 - Players join the session via a short numeric PIN or by scanning a QR code.
 - The player's own device shows **only four plain colored A/B/C/D
   buttons** — no question prompt or answer text/content is ever rendered
@@ -33,7 +33,7 @@ or QR code and answer questions in real time.
 | Database         | None. See §6.                                                      |
 | Real-time sync   | Server-Sent Events (SSE): two streams per session, see §4.2         |
 | Frontend         | Vue 3 (Composition API) + Vite                                     |
-| Rendering        | Typst, compiled and rendered to SVG or canvas client-side via `typst.ts` (WASM); question/answer text, math, and figures (e.g. via the `cetz` package) all go through this one pipeline — see `typst-experiments/` for a feasibility POC |
+| Rendering        | Typst: the quiz file itself is a Typst document (§3.2), compiled and rendered to SVG or canvas client-side via `typst.ts` (WASM); question/answer text, math, and figures (e.g. via the `cetz` package) all go through this one pipeline — see `typst-experiments/` for a feasibility POC |
 | QR code          | Generated client-side JS on the teacher page |
 | Hosting          | Backend on FastAPI Cloud, frontend on GitHub Pages under the custom domain `https://quiz.smlz.ch` (served from the site root, so Vite's `base` stays `/`) |
 
@@ -43,8 +43,9 @@ independent of the quiz use case, are in Appendix A.
 
 ## 3. Question authoring
 
-- Questions are authored ahead of time as static **quiz files**, one file
-  per quiz.
+- Questions are authored ahead of time as static **quiz files**: one `.typ`
+  file per quiz, which is itself a valid Typst document (§3.2) — not
+  Markdown, and not a container format with Typst embedded in it.
 - A quiz file contains an ordered list of questions (see §3.2). Correct
   answers are worth a hardcoded 12/11/10 points by submission order (§5),
   and each question's prompt/answer-grid space split defaults to an even
@@ -54,107 +55,133 @@ independent of the quiz use case, are in Appendix A.
   covers plain text, inline/block math, and figures (e.g. via the `cetz`
   package, per the `typst-experiments/` POC) in one uniform syntax, so
   there is no separate math-vs-figure mechanism.
-- There is no external preview tool dependency (`markdown-preview-enhanced`
-  is dropped); a quiz is previewed with the standalone quiz preview page
-  (§12.2 step 2), which renders questions the same way the host screen
-  will (§7 endpoints are unaffected — the preview never talks to a server).
+- Because the quiz file is a normal Typst document, authoring uses ordinary
+  Typst tooling — the `typst` CLI, or VS Code with a Typst extension
+  (Tinymist) giving syntax highlighting, diagnostics and live preview. No
+  project-specific editor plugin, and no external preview tool
+  (`markdown-preview-enhanced` is dropped), is required.
+- **Compiling the quiz file is the preview** (§3.3): it yields one 16:9
+  page per question, laid out like the host screen and with the correct
+  answer highlighted. The in-app preview page (§12.2 step 2) renders the
+  same layout from the same file and likewise never talks to a server (§7
+  endpoints are unaffected).
 
 ### 3.1 Question types
 
 **Multiple choice is the only supported question type**: exactly 4 options,
 always labeled **A/B/C/D**, exactly one correct.
 
-### 3.2 Question schema
+### 3.2 Quiz file structure
 
-A quiz is a single file: an ordered list of questions, each separated by a
-`---` horizontal rule. Each question starts with a short YAML-like preface
-(plain `key: value` lines, ending at the first blank line) giving
-`correct_answer` and, optionally, `answer_area_fraction`, followed by
-exactly one prompt fenced block plus exactly four option fenced blocks.
-Questions have no title/heading — they're identified purely by their
-position in the file. The outer example block below uses 4 backticks so
-the nested triple-backtick Typst fences inside it stay valid.
+A quiz is a single `.typ` file whose structure is **fixed** and has exactly
+three parts, in this order:
 
-````md
-correct_answer: C
-answer_area_fraction: 0.65
+1. **Template header** — two lines, verbatim, before anything else:
+   `#import "quiz.typ": *` followed by `#show: quiz`.
+2. **Preamble** — optional further `#import`s and `#let` macros. Everything
+   from the template header up to the first `#question(` belongs here.
+3. **Questions** — one or more top-level `#question(...)` calls, each
+   starting at the beginning of a line. Questions have no title/heading —
+   they're identified purely by their position (1st, 2nd, ...) in the file.
 
-```typst
-What is $x$ if $2x + 3 = 11$?
-```
-
-```typst-option
-$2$
-```
-
-```typst-option
-$3$
-```
-
-```typst-option
-$4$
-```
-
-```typst-option
-$5$
-```
-
----
-
-correct_answer: B
+`quiz.typ` is the template shipped in `typst/` of this repository; a quiz
+file sits next to it (or imports it by relative path). The template is what
+turns the same file into a printable/projectable document (§3.3), and it is
+the only project-specific thing an author has to import.
 
 ```typst
-Which graph shows $y = x^2$?
-```
+#import "quiz.typ": *
+#show: quiz
 
-```typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#canvas({ import draw: *; line((-2,0), (2,0)) })
-```
-
-```typst-option
 #import "@preview/cetz:0.5.2": canvas, draw
 #import "@preview/cetz-plot:0.1.4": plot
-#canvas({ import draw: *; plot.plot(size: (3,3), { plot.add(domain: (-2,2), x => x*x) }) })
+
+#let graph(body) = canvas(length: 1cm, body)
+
+#question(
+  correct: "C",
+  answer-area-fraction: 0.65,
+  prompt: [
+    What is $x$ if $2x + 3 = 11$?
+  ],
+  options: (
+    [$x = 2$],
+    [$x = 3$],
+    [$x = 4$],
+    [$x = 5$],
+  ),
+)
+
+#question(
+  correct: "B",
+  prompt: [
+    Which graph shows $y = x^2$?
+  ],
+  options: (
+    [#graph(draw.line((-2, 0), (2, 0)))],
+    [#graph(plot.plot(size: (3, 3), { plot.add(domain: (-2, 2), x => x * x) }))],
+    [...],
+    [...],
+  ),
+)
 ```
 
-```typst-option
-...
-```
+The `#question` arguments are all named, and there are only four of them:
 
-```typst-option
-...
-```
-````
+| Argument | Required | Meaning |
+|----------|----------|---------|
+| `correct` | yes | `"A"`–`"D"`: which option is correct, by position in `options` |
+| `prompt` | yes | a content block `[...]` — the question's Typst source (text, math, and/or a figure) |
+| `options` | yes | an array of **exactly 4** content blocks `[...]`, displayed as the A/B/C/D buttons in that order (§3.1) |
+| `answer-area-fraction` | no, default `0.5` | a number in `(0, 1)` |
 
-- **`---`** on its own line separates questions; there is no per-question
-  heading/id — questions are identified purely by their position (1st,
-  2nd, ...) in the file.
-- **Preface**: the `key: value` lines directly after the previous `---`
-  (or the start of the file), up to the first blank line. `correct_answer`
-  is required and is the letter (`A`–`D`) of the correct option, by
-  position among the four option blocks below. `answer_area_fraction` is
-  optional (see below). This is the only place per-question metadata
-  lives — there is no separate fence attribute or HTML comment.
-- **Prompt**: exactly one ` ```typst ` fenced block per question, containing
-  that question's Typst source (text, math, and/or a figure, all in one
-  snippet).
-- **Options**: exactly 4 plain ` ```typst-option ` fenced blocks (see
-  §3.1, no attributes), each one option's Typst source (plain text, math,
-  and/or a figure). Options are always displayed to players as 4 buttons
-  labeled **A/B/C/D**, in the order the fenced blocks appear. Points follow
-  the hardcoded 12/11/10 submission-order ladder for every question (§5),
-  not configurable, so there is no points override.
-- **`answer_area_fraction`** (optional preface key, default `0.5`) is a
-  number in `(0, 1)`: the fraction of the host screen's available space
-  given to the 2×2 answer grid, remainder to the prompt. `0.5` splits
-  evenly; higher values favor a short prompt with dense answers, lower
-  values favor a long prompt/figure with short answers.
-- Parsing/validation errors (`correct_answer` missing or outside `A`-`D`,
-  wrong number of options (must be exactly 4), missing or duplicate prompt
-  block, `answer_area_fraction` outside `(0, 1)`, etc.) are surfaced to
-  the host when the pasted quiz text is loaded, before a session can be
-  created.
+- **`answer-area-fraction`** is the fraction of the available space given to
+  the 2×2 answer grid, remainder to the prompt. `0.5` splits evenly; higher
+  values favor a short prompt with dense answers, lower values favor a long
+  prompt/figure with short answers. It applies identically to the host
+  screen and to the compiled document (§3.3).
+- Points follow the hardcoded 12/11/10 submission-order ladder for every
+  question (§5), not configurable, so there is no points override.
+- Parsing/validation errors (`correct` missing or outside `A`–`D`, wrong
+  number of options, `answer-area-fraction` outside `(0, 1)`, a `prompt` or
+  option that isn't a content block, content outside the three parts above,
+  etc.) are surfaced to the host when the pasted quiz text is loaded, before
+  a session can be created. The template repeats the same checks as Typst
+  `assert`s, so a malformed quiz also fails to compile (§3.3) rather than
+  producing a wrong-looking page.
+
+### 3.3 Compiling a quiz file
+
+Running `typst compile my-quiz.typ` (or hitting preview in VS Code) renders
+the quiz as a document with **one 16:9 page per question**, showing the
+prompt above the 2×2 A/B/C/D answer grid in the fixed option colors of §8,
+split per `answer-area-fraction`, with the **correct option highlighted**
+(gold ring, the other three dimmed) — the same design as the host screen's
+reveal state. The page is 1280pt × 720pt, so one Typst point maps to one
+CSS pixel of the host screen's canonical 1280×720 canvas.
+
+This makes the quiz file self-sufficient: it can be proof-read, printed or
+projected with no app and no server involved. The app's docs page (`#/docs`)
+offers `quiz.typ` and a minimal starter quiz as downloads.
+
+### 3.4 How the app reads a quiz file
+
+The app does **not** run the template's page layout; it re-renders each
+snippet into its own HTML element (§8). So it splits the file rather than
+compiling it whole:
+
+- Everything before the first top-level `#question(` is kept verbatim as the
+  **preamble**, and is prepended to every snippet the app compiles. Author
+  macros and `@preview` imports therefore work unchanged inside prompts and
+  options.
+- The two template-header lines are **checked and then dropped** from that
+  preamble. They only exist to set up the 16:9 page (§3.3), which would fight
+  the auto-sized page each snippet is compiled on, and nothing inside a
+  prompt or option may depend on the template's exports.
+- Each `#question(...)` call is extracted by scanning balanced brackets, and
+  its named arguments are read off: `correct` and `answer-area-fraction` as
+  literals, `prompt` and each `options` entry as the raw Typst source inside
+  their `[...]` content block.
 
 ## 4. Game flow
 
@@ -338,6 +365,8 @@ class QuestionState(NamedTuple):
 class HostState:
     pin: str
     host_token: str
+    preamble: str            # template header + author imports/macros (§3.4),
+                             # prepended to every snippet before compiling
     questions: list[QuestionState]
     phase: Literal["lobby", "question", "reveal", "leaderboard", "finished"]
     current_question_index: int
@@ -416,7 +445,7 @@ deployment or scale-to-zero purges the whole set.
 - **Host view**: setup screen with textbox (start quiz button) -> PIN + QR
   code display, live join list, question display (with Typst rendering, and
   no separate question-number label/heading; prompt and 2×2 answer grid
-  sized per that question's `answer_area_fraction`, §3.2; per-option
+  sized per that question's `answer-area-fraction`, §3.2; per-option
   answer-count bars **hidden until reveal**, so the host doesn't see the
   count breakdown while the question is still active; the **"Show
   answer"** button doubles as the live answered-count display — e.g. "Show
@@ -483,6 +512,17 @@ deployment or scale-to-zero purges the whole set.
   restart stop verifying (§6.1).
 - No authentication/accounts; `host_token` and `player_token` are secrets
   scoped to a single session, not tied to user identities (§4.2).
+- **CORS is an allowlist, not `*`**: the deployed frontend
+  (`https://quiz.smlz.ch`) plus the local Vite dev and preview origins
+  (`http://localhost:5173` / `http://127.0.0.1:5173` and the `:4173`
+  preview pair, both spellings because Windows resolves `localhost` to
+  either loopback). `ALLOWED_ORIGINS` (comma-separated) replaces the list
+  for a staging deployment. Only the methods and headers actually used are
+  allowed, and credentialed requests are not — identity travels in
+  `X-Host-Token` / `X-Player-Token`, never in a cookie, so nothing is
+  attached to a cross-site request automatically. This is defence in depth
+  rather than access control: the pin and tokens are what actually protect
+  a session (§4.2), since a non-browser client ignores CORS entirely.
 - Reasonable input validation: PIN and token shape are checked before any
   work happens. Payloads are otherwise opaque and are not validated by the
   relay — the host ignores messages from senders it has not seen join, and
@@ -558,18 +598,22 @@ message history.
 Build bottom-up in independently testable vertical slices, tackling the
 stateless parsing logic before the stateful real-time game loop:
 
+0. **Quiz template (`typst/quiz.typ`)** — the `quiz` show rule and the
+   `question` function, plus their `assert`s (§3.2). Verifiable on its own
+   with `typst compile` on an example quiz: one 1280pt × 720pt page per
+   question, correct option highlighted (§3.3).
 1. **Quiz source parser (frontend, pure logic, no server)** — a
-   `parseQuiz(source) -> QuestionState[]` function (§6.2 shapes) covering
-   `---`-separated question splitting, the `correct_answer`/
-   `answer_area_fraction` preface, and the `typst`/`typst-option` fenced
-   blocks (§3.2). Unit-test the validation errors from §3.2 directly (wrong
-   option count, missing/out-of-range `correct_answer`, missing/duplicate
-   prompt block, out-of-range `answer_area_fraction`) before touching the UI.
+   `parseQuiz(source) -> {preamble, questions}` function (§6.2 shapes)
+   covering the fixed three-part file structure, balanced-bracket
+   extraction of each `#question(...)` call, and its named arguments
+   (§3.4). Unit-test the validation errors from §3.2 directly (wrong option
+   count, missing/out-of-range `correct`, non-content-block prompt,
+   out-of-range `answer-area-fraction`) before touching the UI.
 2. **Standalone quiz preview page** — renders a parsed quiz using
    `typst.ts` (client-side WASM compiler + renderer, §2) and no backend at
-   all; this is the sole/official preview mechanism. Lets quiz authoring/
-   rendering be verified in isolation, and doubles as the host's "load
-   quiz" step.
+   all; this is the in-app preview mechanism, alongside just compiling the
+   file (§3.3). Lets quiz authoring/rendering be verified in isolation, and
+   doubles as the host's "load quiz" step.
 3. **Relay** — the seven endpoints from §7, HMAC tokens, two topics per
    session, no state. Provable with integration tests that never construct a
    real quiz, since arbitrary JSON payloads are enough.
@@ -587,9 +631,12 @@ stateless parsing logic before the stateful real-time game loop:
    since these are the only access-control secrets), the "reconnecting"
    banners, keep-alive tuning.
 8. **Deploy**: backend first (`uv run fastapi deploy`, with `SERVER_SECRET`
-   set and the replica maximum pinned to 1), then the GitHub Pages frontend
-   — in that order, since the deployed frontend talks to the deployed
-   backend.
+   set and the replica maximum pinned to 1), then the frontend to GitHub
+   Pages, which serves it at `https://quiz.smlz.ch` — in that order, since
+   the deployed frontend talks to the deployed backend. The custom domain
+   is kept by `frontend/public/CNAME`, which Vite copies into the published
+   artifact, and it must appear in the relay's CORS allowlist (§9) or every
+   browser request fails at the preflight.
 
 ### 12.3 Testing strategy
 

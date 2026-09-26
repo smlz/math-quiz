@@ -10,13 +10,16 @@ const props = withDefaults(
     source: string;
     caption?: string;
     showSource?: boolean;
+    /** Template header (and any imports) needed to parse `source`, hidden from
+     * the listing so an example can show just the `#question(...)` call. */
+    prelude?: string;
   }>(),
-  { showSource: true },
+  { showSource: true, prelude: '#import "quiz.typ": *\n#show: quiz\n\n' },
 );
 
 const parsed = computed(() => {
   try {
-    return { question: parseQuiz(props.source).questions[0], issues: [] as string[] };
+    return { question: parseQuiz(props.prelude + props.source).questions[0], issues: [] as string[] };
   } catch (e) {
     return { question: null, issues: e instanceof QuizParseError ? e.issues : [String(e)] };
   }

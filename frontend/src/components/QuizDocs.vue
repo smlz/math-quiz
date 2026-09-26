@@ -1,172 +1,116 @@
 <script setup lang="ts">
+import { onUnmounted } from "vue";
 import QuizDocExample from "./QuizDocExample.vue";
+import { QUIZ_TEMPLATE, STARTER_QUIZ } from "../quiz/sampleQuiz";
 
-const TEMPLATE = `correct_answer: A
-answer_area_fraction: 0.5
+// Every example below is only the `#question(...)` call; the header (and any
+// imports/macros it needs) is passed as a hidden prelude so the listing stays
+// focused on the one thing the section is about.
+const HEADER = `#import "quiz.typ": *
+#show: quiz
 
-\`\`\`typst
-Hier steht die Aufgabenstellung.
-\`\`\`
-
-\`\`\`typst-option
-Antwort A
-\`\`\`
-
-\`\`\`typst-option
-Antwort B
-\`\`\`
-
-\`\`\`typst-option
-Antwort C
-\`\`\`
-
-\`\`\`typst-option
-Antwort D
-\`\`\`
 `;
 
-const SETS_EXAMPLE = `correct_answer: B
-answer_area_fraction: 0.6
+const PLOT_PRELUDE = `${HEADER}#import "@preview/cetz:0.5.2": canvas, draw
+#import "@preview/cetz-plot:0.1.4": plot
 
-\`\`\`typst
-Gegeben sind $A = { 2, 4, 6, 8, 9 }$ und $B = { 1, 3, 4, 6, 7 }$.
+#let graph(body) = canvas(length: 1cm, {
+  plot.plot(size: (3, 3), x-tick-step: none, y-tick-step: none, body)
+})
 
-Was ist $A inter B$?
-\`\`\`
+`;
 
-\`\`\`typst-option
-\${ 2, 8, 9 }$
-\`\`\`
+const VENN_PRELUDE = `${HEADER}#import "@preview/cetz:0.5.2": canvas, draw
+#import "@preview/cetz-venn:0.2.0": venn2
 
-\`\`\`typst-option
-\${ 4, 6 }$
-\`\`\`
+#let hl = rgb("#4a90d9")
 
-\`\`\`typst-option
-\${ 1, 3, 7 }$
-\`\`\`
+#let venn(a, ab, b) = canvas(length: 1cm, {
+  import draw: *
+  venn2(a-fill: a, ab-fill: ab, b-fill: b, stroke: 1pt + black, padding: 0.3em, name: "venn")
+  content("venn.a", $A$)
+  content("venn.b", $B$)
+})
 
-\`\`\`typst-option
-\${ 1, 2, 3, 4, 6, 7, 8, 9 }$
-\`\`\`
+`;
+
+const SETS_EXAMPLE = `#question(
+  correct: "B",
+  answer-area-fraction: 0.6,
+  prompt: [
+    Gegeben sind $A = { 2, 4, 6, 8, 9 }$ und $B = { 1, 3, 4, 6, 7 }$.
+
+    Was ist $A inter B$?
+  ],
+  options: (
+    [\${ 2, 8, 9 }$],
+    [\${ 4, 6 }$],
+    [\${ 1, 3, 7 }$],
+    [\${ 1, 2, 3, 4, 6, 7, 8, 9 }$],
+  ),
+)
 `;
 
 function fractionExample(fraction: string): string {
-  return `correct_answer: C
-answer_area_fraction: ${fraction}
+  return `#question(
+  correct: "C",
+  answer-area-fraction: ${fraction},
+  prompt: [
+    Ein Rechteck hat die Seiten $a = 7 "cm"$ und $b = 4 "cm"$.
 
-\`\`\`typst
-Ein Rechteck hat die Seiten $a = 7 "cm"$ und $b = 4 "cm"$.
-
-Berechne den Flächeninhalt $A = a dot b$.
-\`\`\`
-
-\`\`\`typst-option
-$11 "cm"^2$
-\`\`\`
-
-\`\`\`typst-option
-$22 "cm"^2$
-\`\`\`
-
-\`\`\`typst-option
-$28 "cm"^2$
-\`\`\`
-
-\`\`\`typst-option
-$35 "cm"^2$
-\`\`\`
+    Berechne den Flächeninhalt $A = a dot b$.
+  ],
+  options: (
+    [$11 "cm"^2$],
+    [$22 "cm"^2$],
+    [$28 "cm"^2$],
+    [$35 "cm"^2$],
+  ),
+)
 `;
 }
 
-const PLOT_EXAMPLE = `correct_answer: B
-answer_area_fraction: 0.8
-
-\`\`\`typst
-Welcher Graph zeigt $y = x^2$?
-\`\`\`
-
-\`\`\`typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#import "@preview/cetz-plot:0.1.4": plot
-#canvas(length: 1cm, {
-  import draw: *
-  plot.plot(size: (3, 3), x-tick-step: none, y-tick-step: none, {
-    plot.add(domain: (-2, 2), x => x)
-  })
-})
-\`\`\`
-
-\`\`\`typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#import "@preview/cetz-plot:0.1.4": plot
-#canvas(length: 1cm, {
-  import draw: *
-  plot.plot(size: (3, 3), x-tick-step: none, y-tick-step: none, {
-    plot.add(domain: (-2, 2), x => x * x)
-  })
-})
-\`\`\`
-
-\`\`\`typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#import "@preview/cetz-plot:0.1.4": plot
-#canvas(length: 1cm, {
-  import draw: *
-  plot.plot(size: (3, 3), x-tick-step: none, y-tick-step: none, {
-    plot.add(domain: (-2, 2), x => x * x * x)
-  })
-})
-\`\`\`
-
-\`\`\`typst-option
-#import "@preview/cetz:0.5.2": canvas, draw
-#import "@preview/cetz-plot:0.1.4": plot
-#canvas(length: 1cm, {
-  import draw: *
-  plot.plot(size: (3, 3), x-tick-step: none, y-tick-step: none, {
-    plot.add(domain: (-2, -0.2), x => 1 / x)
-    plot.add(domain: (0.2, 2), x => 1 / x)
-  })
-})
-\`\`\`
+const PLOT_EXAMPLE = `#question(
+  correct: "B",
+  answer-area-fraction: 0.8,
+  prompt: [Welcher Graph zeigt $y = x^2$?],
+  options: (
+    [#graph({ plot.add(domain: (-2, 2), x => x) })],
+    [#graph({ plot.add(domain: (-2, 2), x => x * x) })],
+    [#graph({ plot.add(domain: (-2, 2), x => x * x * x) })],
+    [#graph({
+      plot.add(domain: (-2, -0.2), x => 1 / x)
+      plot.add(domain: (0.2, 2), x => 1 / x)
+    })],
+  ),
+)
 `;
 
-function venn2Option(a: string, ab: string, b: string): string {
-  return `#import "@preview/cetz:0.5.2": canvas, draw
-#import "@preview/cetz-venn:0.2.0": venn2
-#canvas(length: 1cm, {
-  import draw: *
-  venn2(a-fill: ${a}, ab-fill: ${ab}, b-fill: ${b}, stroke: 1pt + black, padding: 0.3em, name: "venn")
-  content("venn.a", $A$)
-  content("venn.b", $B$)
-})`;
+const VENN_EXAMPLE = `#question(
+  correct: "A",
+  answer-area-fraction: 0.7,
+  prompt: [Welches Diagramm zeigt den Durchschnitt $A inter B$?],
+  options: (
+    [#venn(white, hl, white)],
+    [#venn(hl, white, white)],
+    [#venn(hl, white, hl)],
+    [#venn(hl, hl, hl)],
+  ),
+)
+`;
+
+function downloadUrl(content: string): string {
+  return URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
 }
 
-const FILL = 'rgb("#4a90d9")';
-const VENN_EXAMPLE = `correct_answer: A
-answer_area_fraction: 0.7
+const templateUrl = downloadUrl(QUIZ_TEMPLATE);
+const starterUrl = downloadUrl(STARTER_QUIZ);
 
-\`\`\`typst
-Welches Diagramm zeigt den Durchschnitt $A inter B$?
-\`\`\`
+onUnmounted(() => {
+  URL.revokeObjectURL(templateUrl);
+  URL.revokeObjectURL(starterUrl);
+});
 
-\`\`\`typst-option
-${venn2Option("white", FILL, "white")}
-\`\`\`
-
-\`\`\`typst-option
-${venn2Option(FILL, "white", "white")}
-\`\`\`
-
-\`\`\`typst-option
-${venn2Option(FILL, "white", FILL)}
-\`\`\`
-
-\`\`\`typst-option
-${venn2Option(FILL, FILL, FILL)}
-\`\`\`
-`;
 
 const CHEAT_SHEET: { typst: string; result: string; meaning: string }[] = [
   { typst: "$A inter B$", result: "A ∩ B", meaning: "Durchschnitt" },
@@ -193,45 +137,48 @@ const CHEAT_SHEET: { typst: string; result: string; meaning: string }[] = [
 
 const ERRORS: { message: string; cause: string }[] = [
   {
-    message: "No questions found (expected at least one question)",
-    cause: "Die Datei ist leer oder enthält nur ----Trennlinien.",
-  },
-  {
-    message: "Question N: 'correct_answer' missing or not one of A-D",
+    message: "Missing template header: a quiz file must start with …",
     cause:
-      "Die Zeile correct_answer fehlt, steht nach der ersten Leerzeile, oder der Wert ist keiner der Buchstaben A, B, C, D.",
+      "Die ersten beiden Zeilen fehlen oder sind verändert. Sie müssen exakt #import \"quiz.typ\": * und #show: quiz lauten — Kommentare und Leerzeilen davor sind erlaubt.",
   },
   {
-    message: "Question N: expected exactly one prompt block, found X",
-    cause: "Es gibt keinen oder mehr als einen ```typst-Block. Genau einer ist die Aufgabenstellung.",
+    message: "No questions found (expected at least one #question(...) call …)",
+    cause:
+      "Die Datei enthält keinen #question(…)-Aufruf, oder er ist eingerückt. #question muss immer ganz am Zeilenanfang stehen.",
+  },
+  {
+    message: "Question N: 'correct' missing or not one of \"A\"-\"D\"",
+    cause: "correct: fehlt oder der Wert ist kein Buchstabe in Anführungszeichen — richtig ist z. B. correct: \"C\".",
+  },
+  {
+    message: "Question N: 'prompt' missing or not a content block [...]",
+    cause: "prompt: fehlt, oder der Wert steht nicht in eckigen Klammern. Richtig: prompt: [Text …].",
   },
   {
     message: "Question N: expected exactly 4 options, found X",
     cause:
-      "Es braucht immer genau vier ```typst-option-Blöcke — nie zwei, nie fünf. Häufigste Ursache: eine schliessende ``` fehlt, dann verschmelzen zwei Blöcke zu einem.",
+      "Es braucht immer genau vier Einträge in options — nie drei, nie fünf. Häufigste Ursache: eine fehlende eckige Klammer, dann verschmelzen zwei Antworten zu einer.",
   },
   {
-    message: "Question N: malformed preface line \"…\" (expected 'key: value')",
-    cause:
-      "Eine Zeile vor der ersten Leerzeile ist kein key: value. Achte darauf, dass zwischen Vorspann und erstem Codeblock eine Leerzeile steht.",
+    message: "Question N: unrecognized argument 'x'",
+    cause: "Nur correct, prompt, options und answer-area-fraction sind erlaubt (Tippfehler prüfen, Bindestriche statt Unterstriche).",
   },
   {
-    message: "Question N: unrecognized preface key 'x'",
-    cause: "Nur correct_answer und answer_area_fraction sind erlaubt (Tippfehler prüfen).",
-  },
-  {
-    message: "Question N: 'answer_area_fraction' must be a number in (0, 1)",
+    message: "Question N: 'answer-area-fraction' must be a number in (0, 1)",
     cause: "Der Wert muss echt zwischen 0 und 1 liegen, z. B. 0.6 — nicht 60, nicht 1.",
+  },
+  {
+    message: "Question N: unterminated `#question(...)` call (unbalanced brackets)",
+    cause: "Irgendwo fehlt eine schliessende Klammer. Der Typst-Editor markiert die Stelle meist direkt.",
   },
   {
     message: "Frage N, Option A: … unknown variable: plot",
     cause:
-      "Typst-Kompilierfehler: ein #import fehlt. Für plot.plot(…) braucht es zusätzlich zu cetz auch #import \"@preview/cetz-plot:0.1.4\": plot.",
+      "Typst-Kompilierfehler: ein #import fehlt im Vorspann. Für plot.plot(…) braucht es zusätzlich zu cetz auch #import \"@preview/cetz-plot:0.1.4\": plot.",
   },
   {
     message: "Frage N, Aufgabenstellung: … unexpected end of block comment",
-    cause:
-      "Typst-Syntaxfehler in der Aufgabenstellung, z. B. ein nicht geschlossenes $ oder eine fehlende Klammer.",
+    cause: "Typst-Syntaxfehler in der Aufgabenstellung, z. B. ein nicht geschlossenes $ oder eine fehlende Klammer.",
   },
 ];
 </script>
@@ -241,18 +188,20 @@ const ERRORS: { message: string; cause: string }[] = [
     <header class="quiz-docs__header">
       <h1>Quiz schreiben</h1>
       <p class="quiz-docs__lead">
-        Eine Quiz-Datei ist reiner Text. Sie besteht aus mehreren Fragen, die mit einer Zeile aus genau drei
-        Bindestrichen (<code>---</code>) voneinander getrennt werden. Aufgabenstellung und Antworten werden in
-        <a href="https://typst.app/docs/reference/math/" target="_blank" rel="noopener">Typst</a> geschrieben, also
-        auch Formeln und Diagramme.
+        Eine Quiz-Datei ist ein ganz normales
+        <a href="https://typst.app/docs/" target="_blank" rel="noopener">Typst</a>-Dokument
+        (<code>.typ</code>). Du schreibst sie mit den üblichen Typst-Werkzeugen — am einfachsten in VS Code mit der
+        Erweiterung <strong>Tinymist Typst</strong>, die dir Fehler sofort anzeigt und eine Live-Vorschau öffnet.
+        Kompilierst du die Datei, erhältst du pro Frage eine 16:9-Seite mit hervorgehobener richtiger Antwort — genau
+        so, wie sie später auf dem Beamer aussieht.
       </p>
     </header>
 
     <nav class="quiz-docs__toc">
       <a href="#aufbau">Aufbau</a>
-      <a href="#vorlage">Leere Vorlage</a>
+      <a href="#vorlage">Vorlage herunterladen</a>
       <a href="#beispiel-mengen">Beispiel: Mengen</a>
-      <a href="#antwortflaeche">answer_area_fraction</a>
+      <a href="#antwortflaeche">answer-area-fraction</a>
       <a href="#beispiel-graph">Beispiel: Graph</a>
       <a href="#beispiel-venn">Beispiel: Venn-Diagramm</a>
       <a href="#spickzettel">Typst Cheat Sheet</a>
@@ -260,33 +209,58 @@ const ERRORS: { message: string; cause: string }[] = [
     </nav>
 
     <section id="aufbau">
-      <h2>Aufbau einer Frage</h2>
-      <p>Jede Frage besteht aus zwei Teilen: einem Vorspann und einem Rumpf.</p>
+      <h2>Aufbau einer Quiz-Datei</h2>
+      <p>Jede Quiz-Datei hat denselben, festen Aufbau aus drei Teilen:</p>
       <ol class="quiz-docs__list">
         <li>
-          <strong>Vorspann</strong> — eine oder zwei Zeilen der Form <code>schlüssel: wert</code>, ganz am Anfang der
-          Frage. Er endet bei der ersten Leerzeile.
-          <ul>
-            <li>
-              <code>correct_answer</code> (Pflicht) — der Buchstabe der richtigen Antwort: <code>A</code>,
-              <code>B</code>, <code>C</code> oder <code>D</code>. Die Buchstaben ergeben sich aus der Reihenfolge der
-              Antwortblöcke.
-            </li>
-            <li>
-              <code>answer_area_fraction</code> (optional, Standard <code>0.5</code>) — Anteil der Bildschirmhöhe für
-              das Antwortfeld, eine Zahl echt zwischen 0 und 1.
-            </li>
-          </ul>
+          <strong>Kopf</strong> — genau diese zwei Zeilen, ganz am Anfang der Datei:
+          <code>#import "quiz.typ": *</code> und <code>#show: quiz</code>. Damit wird die Vorlage geladen, die für das
+          Layout sorgt. Die Datei <code>quiz.typ</code> muss im selben Ordner liegen (siehe unten).
         </li>
         <li>
-          <strong>Rumpf</strong> — genau ein Block <code>```typst</code> mit der Aufgabenstellung, gefolgt von genau
-          vier Blöcken <code>```typst-option</code> mit den Antworten A, B, C und D in dieser Reihenfolge.
+          <strong>Vorspann</strong> (optional) — weitere <code>#import</code>-Zeilen und eigene Abkürzungen
+          (<code>#let</code>). Alles, was hier steht, gilt für <em>alle</em> Fragen: Du musst ein Paket wie
+          <code>cetz</code> also nur einmal importieren, nicht in jeder Antwort.
+        </li>
+        <li>
+          <strong>Fragen</strong> — ein <code>#question(…)</code>-Aufruf pro Frage, jeweils am Zeilenanfang. Die
+          Reihenfolge in der Datei ist die Reihenfolge im Spiel.
         </li>
       </ol>
-      <p class="quiz-docs__note">
-        Wichtig: Die Trennlinie zwischen zwei Fragen muss allein auf einer Zeile stehen und darf nur
-        <code>---</code> enthalten. Zwischen Vorspann und erstem Codeblock gehört eine Leerzeile.
-      </p>
+
+      <p>Eine Frage hat genau vier benannte Angaben:</p>
+      <table class="quiz-docs__table">
+        <thead>
+          <tr>
+            <th>Angabe</th>
+            <th>Pflicht</th>
+            <th>Bedeutung</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>correct</code></td>
+            <td>ja</td>
+            <td>Buchstabe der richtigen Antwort in Anführungszeichen: <code>"A"</code> bis <code>"D"</code></td>
+          </tr>
+          <tr>
+            <td><code>prompt</code></td>
+            <td>ja</td>
+            <td>Aufgabenstellung, in eckigen Klammern: <code>[…]</code></td>
+          </tr>
+          <tr>
+            <td><code>options</code></td>
+            <td>ja</td>
+            <td>Genau vier Antworten, je in eckigen Klammern: <code>([…], […], […], […])</code> — in dieser Reihenfolge A, B, C, D</td>
+          </tr>
+          <tr>
+            <td><code>answer-area-fraction</code></td>
+            <td>nein</td>
+            <td>Anteil der Bildschirmhöhe fürs Antwortgitter, Standard <code>0.5</code></td>
+          </tr>
+        </tbody>
+      </table>
+
       <p class="quiz-docs__note">
         Die Spielerinnen und Spieler sehen auf ihrem Handy nur die vier farbigen Knöpfe A–D, nie den Inhalt der
         Antworten. Alles Inhaltliche muss also auf dem Beamer lesbar sein.
@@ -294,12 +268,26 @@ const ERRORS: { message: string; cause: string }[] = [
     </section>
 
     <section id="vorlage">
-      <h2>Leere Vorlage</h2>
+      <h2>Vorlage herunterladen</h2>
       <p>
-        Diese Vorlage ist syntaktisch vollständig und lässt sich sofort starten. Text und Antworten einfach
-        ersetzen, für weitere Fragen den ganzen Block kopieren und mit einer <code>---</code>-Zeile anhängen.
+        Lade beide Dateien in denselben Ordner. <code>quiz.typ</code> ist die Vorlage und wird nie verändert;
+        <code>mein-quiz.typ</code> ist dein Startpunkt — Text und Antworten ersetzen, für weitere Fragen den ganzen
+        <code>#question(…)</code>-Block kopieren.
       </p>
-      <QuizDocExample :source="TEMPLATE" caption="So sieht die Vorlage auf dem Beamer aus." />
+      <p class="quiz-docs__downloads">
+        <a class="quiz-docs__download" :href="templateUrl" download="quiz.typ">quiz.typ (Vorlage)</a>
+        <a class="quiz-docs__download" :href="starterUrl" download="mein-quiz.typ">mein-quiz.typ (Startdatei)</a>
+      </p>
+      <p>
+        Danach in VS Code <code>mein-quiz.typ</code> öffnen und die Tinymist-Vorschau starten — oder im Terminal
+        <code>typst watch mein-quiz.typ</code> laufen lassen. Zum Spielen den Inhalt der Datei kopieren und auf der
+        Startseite einfügen.
+      </p>
+      <QuizDocExample
+        :source="STARTER_QUIZ"
+        prelude=""
+        caption="So sieht die Startdatei auf dem Beamer aus."
+      />
     </section>
 
     <section id="beispiel-mengen">
@@ -307,7 +295,7 @@ const ERRORS: { message: string; cause: string }[] = [
       <p>
         Formeln stehen zwischen Dollarzeichen. In Typst haben Symbole keinen Rückstrich: Der Durchschnitt ist
         <code>inter</code>, nicht <code>\cap</code>. Leerzeichen innerhalb von <code>$…$</code> trennen Symbole und
-        werden nicht gedruckt.
+        werden nicht gedruckt. Eine Leerzeile in <code>prompt: […]</code> ergibt einen Absatz.
       </p>
       <QuizDocExample :source="SETS_EXAMPLE" />
     </section>
@@ -315,7 +303,7 @@ const ERRORS: { message: string; cause: string }[] = [
     <section id="antwortflaeche">
       <h2>Wie viel Platz die Antworten bekommen</h2>
       <p>
-        <code>answer_area_fraction</code> teilt die Beamer-Höhe zwischen Aufgabenstellung und Antwortgitter auf. Ein
+        <code>answer-area-fraction</code> teilt die Beamer-Höhe zwischen Aufgabenstellung und Antwortgitter auf. Ein
         kleiner Wert macht die Aufgabenstellung gross (gut für langen Text), ein grosser Wert macht die Antworten
         gross (gut für Diagramme). Beide Beispiele unten zeigen dieselbe Frage, nur mit anderem Wert.
       </p>
@@ -323,12 +311,12 @@ const ERRORS: { message: string; cause: string }[] = [
         <QuizDocExample
           :source="fractionExample('0.3')"
           :show-source="false"
-          caption="answer_area_fraction: 0.3 — viel Platz für die Aufgabe"
+          caption="answer-area-fraction: 0.3 — viel Platz für die Aufgabe"
         />
         <QuizDocExample
           :source="fractionExample('0.8')"
           :show-source="false"
-          caption="answer_area_fraction: 0.8 — viel Platz für die Antworten"
+          caption="answer-area-fraction: 0.8 — viel Platz für die Antworten"
         />
       </div>
     </section>
@@ -337,10 +325,11 @@ const ERRORS: { message: string; cause: string }[] = [
       <h2>Beispiel: Graphen mit cetz-plot</h2>
       <p>
         Antworten dürfen auch Zeichnungen sein. Dafür gibt es die Typst-Pakete
-        <code>@preview/cetz</code> und <code>@preview/cetz-plot</code>. Die <code>#import</code>-Zeilen müssen in
-        <em>jedem</em> Block stehen, in dem sie gebraucht werden — jeder Block wird einzeln kompiliert.
+        <code>@preview/cetz</code> und <code>@preview/cetz-plot</code>. Die <code>#import</code>-Zeilen und die
+        Abkürzung <code>#let graph(…)</code> stehen einmal im Vorspann der Datei:
       </p>
-      <QuizDocExample :source="PLOT_EXAMPLE" />
+      <pre class="quiz-docs__code">{{ PLOT_PRELUDE.trim() }}</pre>
+      <QuizDocExample :source="PLOT_EXAMPLE" :prelude="PLOT_PRELUDE" />
     </section>
 
     <section id="beispiel-venn">
@@ -349,9 +338,10 @@ const ERRORS: { message: string; cause: string }[] = [
         <code>@preview/cetz-venn</code> liefert <code>venn2</code> und <code>venn3</code>. Über
         <code>a-fill</code>, <code>ab-fill</code> und <code>b-fill</code> wird eingefärbt, welcher Bereich gemeint
         ist; <code>name: "venn"</code> erzeugt die Ankerpunkte <code>venn.a</code> und <code>venn.b</code> für die
-        Beschriftungen.
+        Beschriftungen. Auch hier lohnt sich eine Abkürzung im Vorspann:
       </p>
-      <QuizDocExample :source="VENN_EXAMPLE" />
+      <pre class="quiz-docs__code">{{ VENN_PRELUDE.trim() }}</pre>
+      <QuizDocExample :source="VENN_EXAMPLE" :prelude="VENN_PRELUDE" />
     </section>
 
     <section id="spickzettel">
@@ -441,6 +431,33 @@ const ERRORS: { message: string; cause: string }[] = [
 }
 .quiz-docs__note {
   font-size: 0.9rem;
+}
+.quiz-docs__downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.quiz-docs__download {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent-border, #666);
+  border-radius: 8px;
+  background: var(--accent-bg, transparent);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.quiz-docs__code {
+  max-width: 70ch;
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  background: var(--code-bg, #1f2028);
+  color: var(--text-h, #f3f4f6);
 }
 .quiz-docs__compare {
   display: grid;
