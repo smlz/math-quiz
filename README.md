@@ -10,7 +10,7 @@ scanning a QR code.
 Question prompts and answer options are authored as **Typst** source and
 compiled to SVG in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
 (WASM) — plain text, math and figures (`cetz`) all use the same syntax.
-Player devices only ever show four coloured A/B/C/D buttons; the question
+Player devices only ever show four colored A/B/C/D buttons; the question
 itself is read off the host screen.
 
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
