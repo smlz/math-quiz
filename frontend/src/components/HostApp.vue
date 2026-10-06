@@ -16,6 +16,7 @@ import { clearHostSession, loadHostSession, saveHostSession } from "../api/store
 import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { parseQuiz } from "../quiz/parseQuiz";
+import { fetchQuizSource } from "../quiz/remoteSource";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
 import { renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
@@ -30,7 +31,14 @@ const PREVIEW_DEBOUNCE_MS = 300;
 // exactly the phase players are told about.
 type Status = "setup" | Phase;
 
-const quizSource = ref(SAMPLE_QUIZ);
+// A `?src=` link (SPEC.md §3.5) replaces the sample quiz; the editor starts
+// empty rather than briefly showing the sample while the file loads.
+const remoteSource = new URLSearchParams(location.search).get("src");
+const remoteLoading = ref(false);
+const remoteLoaded = ref(false);
+const remoteError = ref<string | null>(null);
+
+const quizSource = ref(remoteSource ? "" : SAMPLE_QUIZ);
 const loadErrors = ref<string[]>([]);
 const quiz = ref<ParsedQuiz | null>(null);
 // True while every prompt/option is being compiled with Typst before the
@@ -49,6 +57,12 @@ watch(
   (source) => {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
+      // Nothing typed (or a link still loading) is not worth an error list.
+      if (!source.trim()) {
+        previewQuiz.value = null;
+        previewErrors.value = [];
+        return;
+      }
       try {
         previewQuiz.value = parseQuiz(source);
         previewErrors.value = [];
@@ -309,6 +323,22 @@ if (restored?.hostToken) {
   clearHostSession();
 }
 
+async function loadRemoteSource(src: string) {
+  remoteLoading.value = true;
+  try {
+    quizSource.value = await fetchQuizSource(src);
+    remoteLoaded.value = true;
+  } catch (e) {
+    remoteError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    remoteLoading.value = false;
+  }
+}
+
+// A session resumed after a reload keeps its own quiz; the link only fills
+// the editor for a fresh start.
+if (remoteSource && !hostToken.value) void loadRemoteSource(remoteSource);
+
 // Nothing to recover from the relay: it never knew anything about this
 // session in the first place, so resuming is just reconnecting and
 // broadcasting again.
@@ -431,11 +461,21 @@ onUnmounted(() => {
             <h2>Quiz-Quelltext (Typst)</h2>
             <a class="host-app__docs-link" href="/docs" target="_blank" rel="noopener">Anleitung: Quiz schreiben ↗</a>
           </div>
-          <textarea v-model="quizSource" spellcheck="false"></textarea>
+          <p v-if="remoteSource && (remoteLoading || remoteLoaded || remoteError)" class="host-app__remote">
+            <template v-if="remoteLoading">Quiz wird geladen: <code>{{ remoteSource }}</code> …</template>
+            <template v-else-if="remoteLoaded">Geladen von <code>{{ remoteSource }}</code></template>
+            <span v-else class="host-app__remote-error">{{ remoteError }}</span>
+          </p>
+          <textarea v-model="quizSource" spellcheck="false" :readonly="remoteLoading"></textarea>
           <ul v-if="loadErrors.length" class="host-app__errors">
             <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
           </ul>
-          <button type="button" class="host-app__submit" :disabled="validating" @click="loadAndCreateSession">
+          <button
+            type="button"
+            class="host-app__submit"
+            :disabled="validating || remoteLoading"
+            @click="loadAndCreateSession"
+          >
             {{ validating ? "Wird geprüft …" : "Quiz erstellen" }}
           </button>
         </div>
@@ -581,6 +621,15 @@ onUnmounted(() => {
 .host-app__docs-link {
   font-size: 0.9rem;
   white-space: nowrap;
+}
+.host-app__remote {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #888;
+  overflow-wrap: anywhere;
+}
+.host-app__remote-error {
+  color: #b00020;
 }
 .host-app__submit {
   margin-top: 0.75rem;

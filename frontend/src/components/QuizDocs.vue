@@ -111,6 +111,15 @@ onUnmounted(() => {
   URL.revokeObjectURL(starterUrl);
 });
 
+const EXAMPLE_LINK = `${location.origin}/?src=gh:smlz/math-quiz/typst/example-quiz.typ`;
+
+const LINK_FORMS: { form: string; example: string }[] = [
+  { form: "https://…", example: "https://example.com/quizze/mengen.typ" },
+  { form: "gh:besitzer/repo/pfad", example: "gh:smlz/math-quiz/typst/example-quiz.typ" },
+  { form: "gl:besitzer/repo/pfad", example: "gl:muster/quizze/mengen.typ" },
+  { form: "cb:besitzer/repo/pfad", example: "cb:muster/quizze@v2/mengen.typ" },
+];
+
 
 const CHEAT_SHEET: { typst: string; result: string; meaning: string }[] = [
   { typst: "$A inter B$", result: "A ∩ B", meaning: "Durchschnitt" },
@@ -200,6 +209,7 @@ const ERRORS: { message: string; cause: string }[] = [
     <nav class="quiz-docs__toc">
       <a href="#aufbau">Aufbau</a>
       <a href="#vorlage">Vorlage herunterladen</a>
+      <a href="#link">Quiz per Link laden</a>
       <a href="#beispiel-mengen">Beispiel: Mengen</a>
       <a href="#antwortflaeche">answer-area-fraction</a>
       <a href="#beispiel-graph">Beispiel: Graph</a>
@@ -281,13 +291,50 @@ const ERRORS: { message: string; cause: string }[] = [
       <p>
         Danach in VS Code <code>mein-quiz.typ</code> öffnen und die Tinymist-Vorschau starten — oder im Terminal
         <code>typst watch mein-quiz.typ</code> laufen lassen. Zum Spielen den Inhalt der Datei kopieren und auf der
-        Startseite einfügen.
+        Startseite einfügen — oder die Datei online stellen und <a href="#link">per Link laden</a>.
       </p>
       <QuizDocExample
         :source="STARTER_QUIZ"
         prelude=""
         caption="So sieht die Startdatei auf dem Beamer aus."
       />
+    </section>
+
+    <section id="link">
+      <h2>Quiz per Link laden</h2>
+      <p>
+        Liegt die Quiz-Datei öffentlich im Netz, muss sie nicht jedes Mal kopiert werden: Hänge
+        <code>?src=</code> und die Adresse der Datei an die Adresse der Startseite. Beim Öffnen des Links wird die
+        Datei geladen und erscheint im Textfeld, wo sie wie gewohnt geprüft und gestartet wird. Ein Beispiel:
+      </p>
+      <p>
+        <a :href="EXAMPLE_LINK"><code>{{ EXAMPLE_LINK }}</code></a>
+      </p>
+      <p>
+        Für Dateien auf GitHub, GitLab und Codeberg gibt es Kurzformen. Sie laden die Datei vom Standard-Branch;
+        ein anderer Branch, Tag oder Commit folgt mit <code>@</code> auf den Repository-Namen, z. B.
+        <code>gh:smlz/math-quiz@main/typst/example-quiz.typ</code>.
+      </p>
+      <table class="quiz-docs__table">
+        <thead>
+          <tr>
+            <th>Form</th>
+            <th>Beispiel</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in LINK_FORMS" :key="row.form">
+            <td><code>{{ row.form }}</code></td>
+            <td><code>{{ row.example }}</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="quiz-docs__note">
+        Eine https://-Adresse muss direkt auf die Datei selbst zeigen, nicht auf eine Webseite, die sie anzeigt.
+        Ausserdem muss der Server das Laden von fremden Seiten erlauben (CORS) — viele Server tun das nicht. Für
+        GitHub, GitLab und Codeberg deshalb immer die Kurzform verwenden: Deren «Raw»-Links funktionieren nicht
+        überall. GitLab-Projekte in Untergruppen werden von der Kurzform nicht unterstützt.
+      </p>
     </section>
 
     <section id="beispiel-mengen">

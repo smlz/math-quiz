@@ -182,6 +182,27 @@ compiling it whole:
   literals, `prompt` and each `options` entry as the raw Typst source inside
   their `[...]` content block.
 
+### 3.5 Loading a quiz file from a link
+
+Instead of pasting, the host page can be opened as `/?src=<source>`; the
+file is then fetched and put into the editor, where it is validated and
+started exactly like pasted text. A link only fills the editor on a fresh
+start — a session resumed after a reload (§4.3) keeps its own quiz.
+
+The fetch runs in the browser, so the server must send CORS headers. That
+rules out the forges' `/raw/` web URLs on Codeberg and GitLab, so
+shortcuts map to endpoints that do:
+
+| `src`                          | Fetched from |
+|--------------------------------|--------------|
+| `https://…`                    | as given (only `https:`) |
+| `gh:owner/repo[@ref]/path`     | `raw.githubusercontent.com/owner/repo/<ref or HEAD>/path` |
+| `cb:owner/repo[@ref]/path`     | `codeberg.org/api/v1/repos/owner/repo/raw/path[?ref=ref]` |
+| `gl:owner/repo[@ref]/path`     | `gitlab.com/api/v4/projects/owner%2Frepo/repository/files/<path>/raw?ref=<ref or HEAD>` |
+
+Without `@ref` the default branch is used. A ref can't contain `/`, and
+GitLab subgroups aren't expressible as a shortcut.
+
 ## 4. Game flow
 
 ### 4.1 Session lifecycle
