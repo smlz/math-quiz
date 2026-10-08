@@ -18,7 +18,7 @@ described in [§3](SPEC.md#3-question-authoring).
 
 The app is designed for _simplicity_ and _privacy_. The whole game runs in the
 host's browser; the server only passes messages between host and players
-without ever reading them. The server stores nothing, and its access logs are
+without inspecting them. The server stores nothing, and its access logs are
 deleted after one day.
 
 Even though carefully designed, this app is mostly vibe coded. Use at your own
