@@ -19,10 +19,10 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    # `npm ci` runs every dependency's install scripts here, so this job gets
+    # nothing beyond read access; only deploy-frontend can publish to Pages.
     permissions:
       contents: read
-      pages: write
-      id-token: write
     defaults:
       run:
         working-directory: frontend
@@ -90,7 +90,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync
+      - run: uv sync --locked
       - run: uv run fastapi deploy
         env:
           FASTAPI_CLOUD_TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}

@@ -16,7 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync
+      - run: uv sync --locked
       - run: uv run pytest -v
 
   frontend:
@@ -42,7 +42,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync
+      - run: uv sync --locked
       - uses: actions/setup-node@v7
         with:
           node-version: 22
