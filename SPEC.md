@@ -547,6 +547,13 @@ purges the whole map.
   restart stop verifying (§6.1).
 - No authentication/accounts; `host_token` and `player_token` are secrets
   scoped to a single session, not tied to user identities (§4.2).
+- **Content-Security-Policy**: the production build carries a CSP `<meta>`
+  (GitHub Pages cannot send headers; see `contentSecurityPolicy()` in
+  `frontend/vite.config.ts`). Scripts may come only from the site itself,
+  the pinned typst.ts bundle and the page's own inline scripts by hash, so
+  injected markup and `javascript:` URLs cannot run. `'unsafe-eval'` is
+  required by typst.ts's WASM glue; `connect-src` allows any `https:` origin
+  because a quiz may be fetched from any `?src=` URL.
 - **CORS is an allowlist, not `*`**: the deployed frontend
   (`https://quiz.smlz.ch`) plus the local Vite dev and preview origins
   (`http://localhost:5173` / `http://127.0.0.1:5173` and the `:4173`
