@@ -1,10 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Full 3-question, 2-player game driven through real browser tabs (SPEC.md
-// §12.2 step 6), covering the same host+player UI flow (setup -> lobby ->
-// question -> reveal -> leaderboard, three times -> finish) as
-// tests/test_math_quiz.py::test_full_multiplayer_two_question_game_e2e,
-// extended to the 3rd (Venn diagram) question added to SAMPLE_QUIZ.
+// §12.2 step 6), covering the whole host+player UI flow (setup -> lobby ->
+// question -> reveal -> leaderboard, three times -> finish).
 //
 // Uses the SAMPLE_QUIZ from frontend/src/quiz/sampleQuiz.ts, prefilled by
 // default on the host setup screen: Q1 correct_answer is C (index 2), Q2
