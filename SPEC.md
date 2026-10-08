@@ -612,9 +612,11 @@ purges the whole map.
 - `typst.ts` fetches `@preview` packages (e.g. `cetz`) and WASM modules from
   `packages.typst.org`/a CDN at render time — no offline/self-hosted fallback
   is specified yet for v1. The typst.ts script and WASM URLs are pinned to
-  an exact version, and the script carries a Subresource Integrity hash
-  (`frontend/src/quiz/typstAssets.ts`), so a new or tampered release on the
-  CDN cannot run on the site.
+  an exact version, and the script carries a Subresource Integrity hash, so
+  a new or tampered release on the CDN cannot run on the site. Both are
+  derived at build time from the `@myriaddreamin/*` devDependencies
+  (`typstTsAssets()` in `frontend/vite.config.ts`), so Dependabot proposes
+  typst.ts upgrades like any other dependency.
 
 ## 12. Implementation strategy
 

@@ -1,8 +1,48 @@
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
-import { TYPST_SCRIPT_URL } from './src/quiz/typstAssets.ts'
+
+/**
+ * Where the browser loads typst.ts from (see src/quiz/typst.ts), derived from
+ * the `@myriaddreamin/*` devDependencies. They are never bundled -- they are
+ * in package.json only so their exact versions are pinned by the lockfile and
+ * bumped by Dependabot like any other dependency.
+ *
+ * Every URL carries the installed version (an unversioned jsdelivr URL
+ * serves whatever was published last), and the script's integrity hash is
+ * computed from the installed file: jsdelivr serves the npm tarball's files
+ * byte for byte, so the browser runs exactly what npm verified against the
+ * lockfile. A version bump updates URLs and hash together, with nothing to
+ * recompute by hand.
+ */
+function typstTsAssets() {
+  const packageDir = (name: string) => new URL(`./node_modules/@myriaddreamin/${name}/`, import.meta.url)
+  const installedFile = (name: string, path: string) => {
+    const file = new URL(path, packageDir(name))
+    // Fail the build, not the classroom, if a release moves its files.
+    if (!existsSync(file)) throw new Error(`@myriaddreamin/${name} has no ${path} -- did its layout change?`)
+    return file
+  }
+  const cdnUrl = (name: string, path: string) => {
+    installedFile(name, path)
+    const { version } = JSON.parse(readFileSync(new URL('package.json', packageDir(name)), 'utf8'))
+    return `https://cdn.jsdelivr.net/npm/@myriaddreamin/${name}@${version}/${path}`
+  }
+
+  const script = 'dist/esm/contrib/all-in-one-lite.bundle.js'
+  return {
+    scriptUrl: cdnUrl('typst.ts', script),
+    scriptIntegrity: `sha384-${createHash('sha384').update(readFileSync(installedFile('typst.ts', script))).digest('base64')}`,
+    // The WASM is fetched by the script itself, which offers no integrity
+    // option; the pinned version is what keeps it matched to the script.
+    compilerWasmUrl: cdnUrl('typst-ts-web-compiler', 'pkg/typst_ts_web_compiler_bg.wasm'),
+    rendererWasmUrl: cdnUrl('typst-ts-renderer', 'pkg/typst_ts_renderer_bg.wasm'),
+  }
+}
+
+const typstTs = typstTsAssets()
 
 /**
  * Adds a Content-Security-Policy <meta> to the built index.html (GitHub Pages
@@ -31,7 +71,7 @@ function contentSecurityPolicy(): Plugin {
           // without it. That still blocks what this policy is for -- inline
           // scripts and `javascript:` URLs need 'unsafe-inline', which stays
           // off.
-          `script-src 'self' ${TYPST_SCRIPT_URL} 'unsafe-eval' ${inlineScriptHashes.join(' ')}`,
+          `script-src 'self' ${typstTs.scriptUrl} 'unsafe-eval' ${inlineScriptHashes.join(' ')}`,
           // Typst SVG and Vue's style bindings use inline style attributes.
           "style-src 'self' 'unsafe-inline'",
           // The lobby's QR code is a data: URL; Typst images are data: URIs.
@@ -54,6 +94,9 @@ function contentSecurityPolicy(): Plugin {
 // is correct in both dev and production.
 export default defineConfig({
   plugins: [vue(), contentSecurityPolicy()],
+  define: {
+    __TYPST_TS__: JSON.stringify(typstTs),
+  },
   server: {
     fs: {
       // `typst/` (the quiz template and example quiz) lives at the repo root

@@ -6,7 +6,16 @@
 // offline/self-hosted fallback for v1 -- SPEC.md §11).
 
 import { sanitizeSvg } from "./sanitizeSvg";
-import { COMPILER_WASM_URL, RENDERER_WASM_URL, TYPST_SCRIPT_INTEGRITY, TYPST_SCRIPT_URL } from "./typstAssets";
+
+// Version-pinned CDN URLs plus the script's integrity hash, injected at build
+// time from the installed `@myriaddreamin/*` devDependencies (vite.config.ts).
+declare const __TYPST_TS__: {
+  scriptUrl: string;
+  scriptIntegrity: string;
+  compilerWasmUrl: string;
+  rendererWasmUrl: string;
+};
+const TYPST_TS = __TYPST_TS__;
 
 interface TypstGlobal {
   setCompilerInitOptions(options: { getModule: () => string }): void;
@@ -28,9 +37,9 @@ function loadTypst(): Promise<TypstGlobal> {
   loadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.type = "module";
-    script.src = TYPST_SCRIPT_URL;
+    script.src = TYPST_TS.scriptUrl;
     // The browser refuses to run the script if a single byte differs.
-    script.integrity = TYPST_SCRIPT_INTEGRITY;
+    script.integrity = TYPST_TS.scriptIntegrity;
     script.crossOrigin = "anonymous";
     script.onload = () => {
       const typst = window.$typst;
@@ -38,8 +47,8 @@ function loadTypst(): Promise<TypstGlobal> {
         reject(new Error("typst.ts script loaded but window.$typst was not found"));
         return;
       }
-      typst.setCompilerInitOptions({ getModule: () => COMPILER_WASM_URL });
-      typst.setRendererInitOptions({ getModule: () => RENDERER_WASM_URL });
+      typst.setCompilerInitOptions({ getModule: () => TYPST_TS.compilerWasmUrl });
+      typst.setRendererInitOptions({ getModule: () => TYPST_TS.rendererWasmUrl });
       resolve(typst);
     };
     script.onerror = () => reject(new Error("Failed to load typst.ts from jsdelivr"));

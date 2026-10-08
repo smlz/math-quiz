@@ -16,6 +16,9 @@
     "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@myriaddreamin/typst-ts-renderer": "0.7.0",
+    "@myriaddreamin/typst-ts-web-compiler": "0.7.0",
+    "@myriaddreamin/typst.ts": "0.7.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
     "@types/qrcode": "^1.5.6",
