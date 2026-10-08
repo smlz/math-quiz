@@ -7,7 +7,7 @@ const props = withDefaults(
   defineProps<{
     question: QuestionState;
     /** Highlight the correct option. Off during `question_active` (host
-     * hasn't revealed yet); on for the standalone preview and reveal. */
+     * hasn't revealed yet); on for the setup screen's preview and reveal. */
     revealCorrect?: boolean;
     /** Live per-option submission counts (index-aligned with `options`),
      * shown only once revealed (SPEC.md §4.1/§8). */

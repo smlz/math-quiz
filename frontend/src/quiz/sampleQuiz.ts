@@ -4,7 +4,7 @@
 import exampleQuiz from "../../../typst/example-quiz.typ?raw";
 import quizTemplate from "../../../typst/quiz.typ?raw";
 
-/** Prefills the standalone preview and the host's "load quiz" screen. */
+/** Prefills the host's "load quiz" screen. */
 export const SAMPLE_QUIZ = exampleQuiz;
 
 /** `typst/quiz.typ` -- the template every quiz file imports (SPEC.md §3.2). */
