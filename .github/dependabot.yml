@@ -1,20 +1,30 @@
 version: 2
 
+# Every ecosystem waits a week before proposing a freshly published version:
+# compromised releases are usually caught and yanked within days. Security
+# updates are not subject to the cooldown.
+
 updates:
   # Backend (pyproject.toml / uv.lock)
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 
   # Frontend (frontend/package.json)
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 
   # GitHub Actions workflows
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
