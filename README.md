@@ -8,7 +8,7 @@ A live quiz app for maths lessons. A **host** runs the game on a shared screen
 scanning a QR code.
 
 Question prompts and answer options are authored as **Typst** source and
-compiled to SVG in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
+rendered in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
 (WASM) — plain text, math and figures (`cetz`) all use the same syntax.
 Player devices only ever show four colored A/B/C/D buttons; the question
 itself is read off the host screen.
@@ -16,7 +16,13 @@ itself is read off the host screen.
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
 described in [§3](SPEC.md#3-question-authoring).
 
-This app is mostly vibe coded. Use at your own risk!
+The app is designed for _simplicity_ and _privacy_. The whole game runs in the
+host's browser; the server only passes messages between host and players
+without ever reading them. The server stores nothing, and its access logs are
+deleted after one day.
+
+Even though carefully designed, this app is mostly vibe coded. Use at your own
+risk!
 
 ## Architecture
 
@@ -97,11 +103,6 @@ npm run test:e2e
 
 The Playwright config starts both the backend and the Vite dev server itself,
 so no servers need to be running beforehand.
-
-All three suites run automatically on every push and pull request via
-[.github/workflows/test.yml](.github/workflows/test.yml). [Dependabot](.github/dependabot.yml)
-opens a pull request weekly for outdated backend (uv), frontend (npm) and
-GitHub Actions dependencies, which then run through the same CI checks.
 
 ## License
 
