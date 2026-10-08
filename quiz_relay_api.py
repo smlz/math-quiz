@@ -9,10 +9,14 @@ keeps no state at all:
     secret, so it can be verified after the process has forgotten everything,
   - the two per-session topics exist only as long as someone is subscribed.
 
-The single exception is the set of pins currently in use, kept only so two
-concurrent hosts cannot be handed the same one. It is a live-pin reservation,
-not session state: a host releases its pin when the quiz finishes, and a
-restart or scale-to-zero purges whatever was left dangling.
+The single exception is the map of pins currently in use to the session that
+holds them. It keeps two concurrent hosts from being handed the same pin, and
+it is what stops a host token from outliving its session: pins are only six
+digits and get reused, so a token signed over the pin alone would also unlock
+every later session that draws the same pin. A host releases its pin when the
+quiz finishes, and a restart or scale-to-zero purges whatever was left
+dangling -- the first valid host token seen for a pin afterwards claims it
+again (see `_require_host`).
 
 Because of that, a restart or a scale-to-zero cold start needs no recovery
 endpoint. Participants reconnect, the host's next state broadcast arrives,
@@ -46,6 +50,7 @@ import hmac
 import json
 import os
 import secrets
+import time
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Path
@@ -61,7 +66,11 @@ PIN_PATTERN = r"^\d{6}$"
 
 # urlsafe-b64 of a SHA-256 digest, minus padding.
 _SIGNATURE_LENGTH = 43
-HOST_TOKEN_PATTERN = rf"^[A-Za-z0-9_-]{{{_SIGNATURE_LENGTH}}}$"
+# `<session_id>.<expires>.<signature>` -- the random session id is what
+# tells two sessions on the same pin apart; the expiry (unix seconds) bounds
+# how long a token is any use at all, generously enough for a whole school day.
+HOST_TOKEN_PATTERN = rf"^[A-Za-z0-9_-]{{12}}\.\d{{1,12}}\.[A-Za-z0-9_-]{{{_SIGNATURE_LENGTH}}}$"
+SESSION_TTL_SECONDS = 24 * 60 * 60
 # `<player_id>.<signature>` -- self-contained, so the server can recover the
 # player's identity from the token alone without having stored anything.
 PLAYER_TOKEN_PATTERN = rf"^[A-Za-z0-9_-]{{12}}\.[A-Za-z0-9_-]{{{_SIGNATURE_LENGTH}}}$"
@@ -97,8 +106,8 @@ def _sign(message: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def _host_token(pin: str) -> str:
-    return _sign(f"{pin}:host")
+def _host_token(pin: str, session_id: str, expires: int) -> str:
+    return f"{session_id}.{expires}.{_sign(f'{pin}:host:{session_id}:{expires}')}"
 
 
 def _player_token(pin: str, player_id: str) -> str:
@@ -106,7 +115,29 @@ def _player_token(pin: str, player_id: str) -> str:
 
 
 def _require_host(pin: str, token: str | None) -> None:
-    if token is None or not hmac.compare_digest(token, _host_token(pin)):
+    """Accept only a validly signed, unexpired token of the session that
+    currently holds `pin`.
+
+    A pin with no live session (after a restart, or once released) is claimed
+    by the first valid token that shows up: that is how a running quiz
+    survives a cold start. The residual risk -- a still-unexpired token of an
+    *earlier* session on the same pin racing the real host right after a
+    restart -- is bounded by `SESSION_TTL_SECONDS`.
+    """
+    if token is None:
+        raise HTTPException(status_code=403, detail="Invalid or missing host token")
+    session_id, expires, _ = token.split(".")
+    now = time.time()
+    if (
+        not hmac.compare_digest(token, _host_token(pin, session_id, int(expires)))
+        or int(expires) <= now
+    ):
+        raise HTTPException(status_code=403, detail="Invalid or missing host token")
+    current = live_sessions.get(pin)
+    if current is None or current[1] <= now:
+        live_sessions.pop(pin, None)
+        live_sessions[pin] = (session_id, int(expires))
+    elif current[0] != session_id:
         raise HTTPException(status_code=403, detail="Invalid or missing host token")
 
 
@@ -150,6 +181,9 @@ class Fanout:
                 queue.get_nowait()
             queue.put_nowait(frame)
 
+    def has_subscribers(self, topic: str) -> bool:
+        return topic in self._queues
+
     async def subscribe(self, topic: str) -> AsyncIterator[bytes]:
         queue: asyncio.Queue[bytes] = asyncio.Queue(QUEUE_SIZE)
         self._queues[topic].add(queue)
@@ -177,10 +211,10 @@ class Fanout:
 
 fanout = Fanout()
 
-# Pins handed out and not yet released. Purely a collision guard, so a
-# forgotten entry (host tab closed without finishing) costs nothing but one
-# unusable pin until the next restart.
-live_pins: set[str] = set()
+# Pin -> (session_id, expires) for every pin handed out and not yet released.
+# A forgotten entry (host tab closed without finishing) costs nothing but one
+# unusable pin until it expires or the process restarts.
+live_sessions: dict[str, tuple[str, int]] = {}
 
 
 def _state_topic(pin: str) -> str:
@@ -189,6 +223,18 @@ def _state_topic(pin: str) -> str:
 
 def _message_topic(pin: str) -> str:
     return f"{pin}:message"
+
+
+def _pin_in_use(pin: str, now: float) -> bool:
+    """A pin is taken while a session holds it -- or while anyone is still
+    connected to it, which after a restart is the only trace left of a quiz
+    whose host has not reconnected yet."""
+    current = live_sessions.get(pin)
+    return (
+        (current is not None and current[1] > now)
+        or fanout.has_subscribers(_state_topic(pin))
+        or fanout.has_subscribers(_message_topic(pin))
+    )
 
 
 # Request/response models
@@ -244,12 +290,18 @@ async def health():
 
 @router.post("/session", response_model=CreateSessionResponse)
 async def create_session():
+    now = time.time()
     while True:
         pin = "".join(secrets.choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
-        if pin not in live_pins:
+        if not _pin_in_use(pin, now):
             break
-    live_pins.add(pin)
-    return CreateSessionResponse(pin=pin, host_token=_host_token(pin))
+    session_id = secrets.token_urlsafe(9)
+    expires = int(now) + SESSION_TTL_SECONDS
+    live_sessions.pop(pin, None)
+    live_sessions[pin] = (session_id, expires)
+    return CreateSessionResponse(
+        pin=pin, host_token=_host_token(pin, session_id, expires)
+    )
 
 
 @router.delete("/session/{pin}")
@@ -258,7 +310,7 @@ async def end_session(
     host_token: str | None = HostTokenHeader,
 ):
     _require_host(pin, host_token)
-    live_pins.discard(pin)
+    live_sessions.pop(pin, None)
     return {"ok": True}
 
 

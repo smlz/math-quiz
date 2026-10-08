@@ -3,11 +3,21 @@
 import asyncio
 import contextlib
 import re
+import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 import quiz_relay_api as relay
+
+
+@pytest.fixture(autouse=True)
+def _forget_live_sessions():
+    # The live-session map is the relay's only module-level state; without
+    # this, pins handed out by one test would leak into the next.
+    relay.live_sessions.clear()
+    yield
+    relay.live_sessions.clear()
 
 
 @pytest.fixture
@@ -54,6 +64,11 @@ async def _stop_subscriber(stream, task):
     await stream.aclose()
 
 
+def _mint_host_token(pin, session_id="aaaaaaaaaaaa", ttl=relay.SESSION_TTL_SECONDS):
+    """A host token the relay never handed out, as after a restart."""
+    return relay._host_token(pin, session_id, int(time.time()) + ttl)
+
+
 def _parse_sse(frame: bytes) -> tuple[str, str]:
     match = re.fullmatch(r"event: (.+)\ndata: (.+)\n\n", frame.decode())
     assert match, f"not an SSE data frame: {frame!r}"
@@ -89,28 +104,28 @@ async def test_join_rejects_malformed_pin(client):
 async def test_create_session_redraws_a_pin_that_is_already_live(client, monkeypatch):
     digits = iter("111111" + "222222")
     monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: next(digits))
-    relay.live_pins.add("111111")
+    relay.live_sessions["111111"] = ("aaaaaaaaaaaa", int(time.time()) + 60)
 
     assert (await _create_session(client))["pin"] == "222222"
 
 
 async def test_end_session_releases_the_pin(client):
     session = await _create_session(client)
-    assert session["pin"] in relay.live_pins
+    assert session["pin"] in relay.live_sessions
 
     response = await client.delete(
         f"/session/{session['pin']}",
         headers={relay.HOST_TOKEN_HEADER: session["host_token"]},
     )
     assert response.status_code == 200
-    assert session["pin"] not in relay.live_pins
+    assert session["pin"] not in relay.live_sessions
 
 
 async def test_end_session_requires_the_host_token(client):
     session = await _create_session(client)
 
     assert (await client.delete(f"/session/{session['pin']}")).status_code == 403
-    assert session["pin"] in relay.live_pins
+    assert session["pin"] in relay.live_sessions
 
 
 # Statelessness
@@ -123,7 +138,7 @@ async def test_relay_accepts_a_session_it_never_minted(client):
     response = await client.post(
         f"/session/{pin}/state",
         json={"phase": "lobby"},
-        headers={relay.HOST_TOKEN_HEADER: relay._host_token(pin)},
+        headers={relay.HOST_TOKEN_HEADER: _mint_host_token(pin)},
     )
     assert response.status_code == 200
 
@@ -148,7 +163,7 @@ async def test_publish_state_requires_the_host_token(client):
     assert (await client.post(path, json={})).status_code == 403
     assert (
         await client.post(
-            path, json={}, headers={relay.HOST_TOKEN_HEADER: relay._host_token("000000")}
+            path, json={}, headers={relay.HOST_TOKEN_HEADER: _mint_host_token("000000")}
         )
     ).status_code == 403
     assert (
@@ -164,9 +179,80 @@ async def test_message_stream_requires_the_host_token(client):
     assert (await client.get(path)).status_code == 403
     # A player must not be able to read what other players send.
     assert (
-        await client.get(path, headers={relay.HOST_TOKEN_HEADER: relay._host_token("000000")})
+        await client.get(path, headers={relay.HOST_TOKEN_HEADER: _mint_host_token("000000")})
     ).status_code == 403
-    assert player["player_token"] not in relay._host_token(session["pin"])
+    assert player["player_token"] not in session["host_token"]
+
+
+async def test_host_token_of_an_earlier_session_on_the_same_pin_is_rejected(
+    client, monkeypatch
+):
+    # Pins are reused, so a token must not unlock a later session that
+    # happens to draw the same pin -- otherwise anyone could harvest host
+    # tokens for every pin just by creating and releasing sessions.
+    monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: "7")
+    earlier = await _create_session(client)
+    await client.delete(
+        f"/session/{earlier['pin']}",
+        headers={relay.HOST_TOKEN_HEADER: earlier["host_token"]},
+    )
+    later = await _create_session(client)
+    assert later["pin"] == earlier["pin"]
+    assert later["host_token"] != earlier["host_token"]
+
+    path = f"/session/{later['pin']}/state"
+    stale = {relay.HOST_TOKEN_HEADER: earlier["host_token"]}
+    assert (await client.post(path, json={}, headers=stale)).status_code == 403
+    assert (
+        await client.get(f"/session/{later['pin']}/message_stream", headers=stale)
+    ).status_code == 403
+    current = {relay.HOST_TOKEN_HEADER: later["host_token"]}
+    assert (await client.post(path, json={}, headers=current)).status_code == 200
+
+
+async def test_expired_host_token_is_rejected(client):
+    response = await client.post(
+        "/session/424242/state",
+        json={},
+        headers={relay.HOST_TOKEN_HEADER: _mint_host_token("424242", ttl=-1)},
+    )
+    assert response.status_code == 403
+
+
+async def test_tampered_host_token_expiry_is_rejected(client):
+    session = await _create_session(client)
+    session_id, expires, signature = session["host_token"].split(".")
+    extended = f"{session_id}.{int(expires) + 1}.{signature}"
+
+    response = await client.post(
+        f"/session/{session['pin']}/state",
+        json={},
+        headers={relay.HOST_TOKEN_HEADER: extended},
+    )
+    assert response.status_code == 403
+
+
+async def test_after_a_restart_the_first_valid_host_token_claims_the_pin(client):
+    pin = "424242"
+    first = {relay.HOST_TOKEN_HEADER: _mint_host_token(pin, "aaaaaaaaaaaa")}
+    other = {relay.HOST_TOKEN_HEADER: _mint_host_token(pin, "bbbbbbbbbbbb")}
+
+    assert (await client.post(f"/session/{pin}/state", json={}, headers=first)).status_code == 200
+    assert (await client.post(f"/session/{pin}/state", json={}, headers=other)).status_code == 403
+
+
+async def test_create_session_skips_a_pin_someone_is_still_connected_to(
+    client, monkeypatch
+):
+    # After a restart the live-session map is empty, but a quiz whose host
+    # has not reconnected yet still has players listening on its pin.
+    stream, task = await _start_subscriber(relay._state_topic("111111"))
+    try:
+        digits = iter("111111" + "222222")
+        monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: next(digits))
+        assert (await _create_session(client))["pin"] == "222222"
+    finally:
+        await _stop_subscriber(stream, task)
 
 
 async def test_publish_message_requires_the_player_token(client):

@@ -282,6 +282,13 @@ Identity:
   the host. Both are minted by the relay but **not stored**: every token is
   an HMAC of a server secret, so it can be verified after the process has
   forgotten everything (§6).
+- The `host_token` has the form `<session_id>.<expires>.<signature>`. Pins
+  are short and get reused, so a token signed over the pin alone would also
+  unlock every later session that draws the same pin — and anyone could
+  harvest such tokens for all pins just by creating sessions. The random
+  `session_id` ties the token to one session (the relay remembers which
+  session currently holds each live pin, §7), and the expiry (24 h) bounds
+  how long any token is of use.
 - Each player gets a `player_token` of the form `<player_id>.<signature>`,
   returned only to its owner. Because the id travels inside the token, the
   relay recovers who is speaking from the token alone.
@@ -355,8 +362,8 @@ What each side keeps locally:
 **Nothing.** There is no database and no server-side session registry. The
 relay holds only the set of currently connected SSE subscribers per topic,
 which is connection bookkeeping rather than state, and which disappears the
-moment the last subscriber leaves, plus an in-memory `set` of the pins
-currently in use (see §7).
+moment the last subscriber leaves, plus an in-memory map from the pins
+currently in use to the session holding them (see §7).
 
 This is what makes a restart or a scale-to-zero cold start survivable: a
 valid token is the only thing needed to keep using a session, so a
@@ -454,11 +461,15 @@ happens.
 Because nothing is stored, there is no "unknown session" error: a request
 carrying a valid token for a pin is served whether or not this process ever
 minted it. Pins, however, **are** checked for collisions: the relay keeps an
-in-memory `set` of the pins currently in use and re-draws until it finds a
-free one, so two live hosts can never share a topic. `DELETE
-/api/v1/session/{pin}` releases the pin when the quiz finishes; a host that
-never finishes simply leaves its pin reserved until the next restart,
-deployment or scale-to-zero purges the whole set.
+in-memory map from each pin currently in use to the session holding it, and
+re-draws until it finds a pin that is neither held nor still has anyone
+connected to it, so two live hosts can never share a topic. A host token is
+only accepted for the session that currently holds its pin; after a restart
+the map is empty, and the first valid, unexpired host token seen for a pin
+claims it again. `DELETE /api/v1/session/{pin}` releases the pin when the
+quiz finishes; a host that never finishes simply leaves its pin reserved
+until the token expires or the next restart, deployment or scale-to-zero
+purges the whole map.
 
 ## 8. Frontend (Vue 3)
 
@@ -597,8 +608,8 @@ from the host at any moment, using only the current state and never the
 message history.
 
 - **`POST /api/v1/session`** mints `{pin, host_token}` and stores nothing
-  but the pin itself, in the in-memory live-pin set that keeps two hosts
-  from drawing the same one (§7); `DELETE /api/v1/session/{pin}` gives it
+  but the pin and its session id, in the in-memory live-session map that
+  keeps two hosts from drawing the same pin (§7); `DELETE /api/v1/session/{pin}` gives it
   back when the quiz finishes. The quiz source is never sent to the server
   at all — it is only pasted into the host's browser (§1, §3) — so the host
   mirrors its own state to localStorage to survive a refresh (§4.3).
@@ -708,8 +719,8 @@ no state at all (§6.1).
 
 - Backend on FastAPI Cloud with a single replica; frontend on GitHub Pages,
   served under its own domain.
-- No database and no server state at all. Tokens are HMACs of a server
-  secret and pub/sub topics are created lazily, so a restart or a
+- No database and no server state beyond the live-pin map. Tokens are HMACs
+  of a server secret and pub/sub topics are created lazily, so a restart or a
   scale-to-zero cold start needs no recovery endpoint: participants simply
   reconnect and the next state broadcast heals them.
 - Reliability by **idempotent state transfer**, not message durability: the
