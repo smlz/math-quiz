@@ -603,7 +603,10 @@ purges the whole map.
   diagrams).
 - `typst.ts` fetches `@preview` packages (e.g. `cetz`) and WASM modules from
   `packages.typst.org`/a CDN at render time — no offline/self-hosted fallback
-  is specified yet for v1.
+  is specified yet for v1. The typst.ts script and WASM URLs are pinned to
+  an exact version, and the script carries a Subresource Integrity hash
+  (`frontend/src/quiz/typstAssets.ts`), so a new or tampered release on the
+  CDN cannot run on the site.
 
 ## 12. Implementation strategy
 

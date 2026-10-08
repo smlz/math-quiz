@@ -6,13 +6,7 @@
 // offline/self-hosted fallback for v1 -- SPEC.md §11).
 
 import { sanitizeSvg } from "./sanitizeSvg";
-
-const TYPST_SCRIPT_URL =
-  "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js";
-const COMPILER_WASM_URL =
-  "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm";
-const RENDERER_WASM_URL =
-  "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm";
+import { COMPILER_WASM_URL, RENDERER_WASM_URL, TYPST_SCRIPT_INTEGRITY, TYPST_SCRIPT_URL } from "./typstAssets";
 
 interface TypstGlobal {
   setCompilerInitOptions(options: { getModule: () => string }): void;
@@ -35,6 +29,9 @@ function loadTypst(): Promise<TypstGlobal> {
     const script = document.createElement("script");
     script.type = "module";
     script.src = TYPST_SCRIPT_URL;
+    // The browser refuses to run the script if a single byte differs.
+    script.integrity = TYPST_SCRIPT_INTEGRITY;
+    script.crossOrigin = "anonymous";
     script.onload = () => {
       const typst = window.$typst;
       if (!typst) {
