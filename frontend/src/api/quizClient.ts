@@ -82,6 +82,16 @@ export type ConnectionStatus = "open" | "reconnecting";
 
 // Requests
 
+/** A request the relay answered with an error status. */
+export class RelayError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function postJson<T>(
   path: string,
   body?: unknown,
@@ -94,7 +104,7 @@ async function postJson<T>(
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`POST ${path} failed (${response.status}): ${detail}`);
+    throw new RelayError(`POST ${path} failed (${response.status}): ${detail}`, response.status);
   }
   return response.json();
 }

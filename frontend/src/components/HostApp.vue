@@ -7,7 +7,9 @@ import {
   publishState,
   subscribeToMessages,
   HEARTBEAT_MS,
+  RelayError,
   type ConnectionStatus,
+  type HostCredentials,
   type IncomingMessage,
   type Phase,
   type SessionSnapshot,
@@ -167,6 +169,15 @@ async function compileAllTypstSnippets(parsedQuiz: ParsedQuiz): Promise<string[]
   return results.filter((r): r is string => r !== null);
 }
 
+function createSessionErrorMessage(error: unknown): string {
+  // The relay answers 503 when it cannot hand out a pin: every pin is taken,
+  // or too many sessions are live. Both clear up on their own.
+  if (error instanceof RelayError && error.status === 503) {
+    return "Gerade sind alle Spiel-PINs vergeben. Bitte versuche es in ein paar Minuten noch einmal.";
+  }
+  return "Das Quiz konnte nicht gestartet werden, weil der Server nicht erreichbar ist. Bitte versuche es später noch einmal.";
+}
+
 async function loadAndCreateSession() {
   loadErrors.value = [];
   try {
@@ -186,7 +197,14 @@ async function loadAndCreateSession() {
     return;
   }
 
-  const created = await createSession();
+  let created: HostCredentials;
+  try {
+    created = await createSession();
+  } catch (e) {
+    quiz.value = null;
+    loadErrors.value = [createSessionErrorMessage(e)];
+    return;
+  }
   pin.value = created.pin;
   hostToken.value = created.hostToken;
 
