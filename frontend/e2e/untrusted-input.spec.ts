@@ -18,6 +18,36 @@ async function send(request: APIRequestContext, pin: string, token: string, payl
   expect(response.ok()).toBe(true);
 }
 
+test("a quiz cannot smuggle script into the rendered SVG", async ({ page }) => {
+  // typst.ts carries a link's URL through verbatim, and the SVG is mounted
+  // with v-html: a `?src=` quiz could otherwise plant a javascript: link.
+  await page.goto("/");
+  await page.locator("textarea").fill(`#import "quiz.typ": *
+#show: quiz
+
+#question(
+  correct: "A",
+  prompt: [
+    #link("javascript:alert(document.domain)")[evil]
+    #link("https://example.com")[fine]
+  ],
+  options: ([A], [B], [C], [D]),
+)
+`);
+
+  const prompt = page.locator(".host-app__preview .typst-figure__canvas svg").first();
+  await expect(prompt).toBeVisible();
+  const found = await prompt.evaluate((svg) => ({
+    hrefs: Array.from(svg.querySelectorAll("a")).map(
+      (a) => a.getAttribute("href") ?? a.getAttributeNS("http://www.w3.org/1999/xlink", "href"),
+    ),
+    scripts: svg.querySelectorAll("script").length,
+  }));
+  expect(found.hrefs).toContain("https://example.com");
+  expect(found.hrefs.filter((href) => href?.toLowerCase().includes("javascript"))).toEqual([]);
+  expect(found.scripts).toBe(0);
+});
+
 test("host ignores or trims hostile player messages", async ({ page: host, request }) => {
   await host.goto("/");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();

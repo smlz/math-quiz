@@ -5,6 +5,8 @@
 // packages such as cetz from jsdelivr/packages.typst.org on demand, with no
 // offline/self-hosted fallback for v1 -- SPEC.md §11).
 
+import { sanitizeSvg } from "./sanitizeSvg";
+
 const TYPST_SCRIPT_URL =
   "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js";
 const COMPILER_WASM_URL =
@@ -70,7 +72,9 @@ export function renderTypst(source: string): Promise<string> {
 
   const run = async () => {
     const typst = await loadTypst();
-    return typst.svg({ mainContent: wrapped });
+    // The source may come from a stranger's `?src=` link and the result is
+    // mounted with v-html, so it is sanitized before anyone sees it.
+    return sanitizeSvg(await typst.svg({ mainContent: wrapped }));
   };
 
   const result = renderQueue.then(run);
