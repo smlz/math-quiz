@@ -26,6 +26,10 @@ import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
+// Generous for one class, but bounds what a flood of joins from strangers who
+// guessed the pin can do to the roster, the projector and every snapshot.
+const MAX_PLAYERS = 200;
+const MAX_NICKNAME_LENGTH = 30;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -232,18 +236,31 @@ async function broadcast() {
   }
 }
 
+/** Anyone who knows (or guesses) the pin can mint a player token and send
+ * any JSON object at all, so the payload is untrusted input: only the
+ * relay-attributed `player_id` can be relied on. */
 function handleMessage({ player_id, payload }: IncomingMessage) {
   if (payload.type === "join") {
-    if (roster.get(player_id) === payload.nickname) return; // a join retry
-    roster.set(player_id, payload.nickname);
+    // The first join wins: retries, and renames from an id already seen, are
+    // ignored -- a real player always re-sends the nickname it joined with.
+    if (roster.has(player_id) || roster.size >= MAX_PLAYERS) return;
+    if (typeof payload.nickname !== "string") return;
+    // Same limit as the join form's maxlength, which only binds honest clients.
+    const nickname = Array.from(payload.nickname.trim()).slice(0, MAX_NICKNAME_LENGTH).join("");
+    if (!nickname) return;
+    roster.set(player_id, nickname);
     if (!scores.has(player_id)) scores.set(player_id, 0);
-  } else {
-    if (status.value !== "question") return;
+  } else if (payload.type === "answer") {
+    if (status.value !== "question" || !currentQuestion.value) return;
     if (payload.question_index !== currentQuestionIndex.value) return;
     // Unknown senders are ignored: anyone who knows the pin can mint a token,
     // but only players the host has seen join can score.
     if (!roster.has(player_id) || answers.has(player_id)) return;
-    answers.set(player_id, payload.option_index);
+    const optionIndex = payload.option_index;
+    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= currentQuestion.value.options.length) return;
+    answers.set(player_id, optionIndex);
+  } else {
+    return;
   }
   // Answer immediately rather than at the next heartbeat, so the sender sees
   // its own message land without a visible delay.

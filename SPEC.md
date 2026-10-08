@@ -560,8 +560,13 @@ purges the whole map.
   a session (§4.2), since a non-browser client ignores CORS entirely.
 - Reasonable input validation: PIN and token shape are checked before any
   work happens. Request bodies are capped at 64 KiB (`413` beyond that).
-  Payloads are otherwise opaque and are not validated by the relay — the host ignores messages from senders it has not seen join, and
-  answers for the wrong question index.
+  Payloads are otherwise opaque and are not validated by the relay — the
+  host ignores messages from senders it has not seen join, and answers for
+  the wrong question index. Since anyone who knows the pin can mint a token
+  and send any JSON object, the host treats every payload as untrusted: a
+  nickname must be a string and is trimmed to 30 characters, an id that has
+  joined cannot rename itself, `option_index` must be an integer within the
+  question's options, and the roster is capped at 200 players.
 - Accepted risks, given 25 pupils in one room: anyone who knows the pin can
   read the state stream and mint a player token, so a determined student
   could spam the host's inbox. There is no rate limiting.
