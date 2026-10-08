@@ -13,7 +13,6 @@ const nicknameReadonly = ref(!!storedNickname);
 const error = ref("");
 const joining = ref(false);
 const reconnecting = ref(false);
-const autoJoining = ref(false);
 
 const emit = defineEmits<{ joined: [session: StoredPlayerSession] }>();
 
@@ -57,26 +56,22 @@ async function join() {
 // A stored token means this device already belongs to a player in this quiz.
 // Tokens are signed rather than stored server-side, so resuming needs no
 // request at all -- and re-joining would only create a duplicate player.
-onMounted(async () => {
+//
+// Anything else always waits for a tap, even with the pin and a nickname from
+// an earlier quiz already filled in: joining on load would let any
+// `/join?pin=...` link, from anyone, hand this device's nickname to whatever
+// session it names.
+onMounted(() => {
   const stored = pin.value ? loadPlayerSession(pin.value) : null;
   if (stored) {
     reconnecting.value = true;
     emit("joined", stored);
-    return;
   }
-  // Opened via the host's QR code with a nickname from an earlier quiz: there
-  // is nothing left to ask for, so skip the form entirely.
-  if (!storedNickname || !/^\d{6}$/.test(pin.value.trim())) return;
-  autoJoining.value = true;
-  await join();
-  // Only a failed join returns here with the form still mounted.
-  autoJoining.value = false;
 });
 </script>
 
 <template>
   <p v-if="reconnecting" class="player-join__reconnecting">Verbinde wieder…</p>
-  <p v-else-if="autoJoining" class="player-join__reconnecting">Trete bei…</p>
 
   <form v-else class="player-join" @submit.prevent="join()">
     <h2>Einem Quiz beitreten</h2>

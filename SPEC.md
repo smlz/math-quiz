@@ -218,8 +218,9 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    Players join and choose a nickname, which reaches the host as an ordinary
    message; they appear in the host's lobby view, and see themselves
    confirmed in the next snapshot. Nicknames are stored in the client's
-   localStorage and reused for later sessions. The number of joined players
-   is shown.
+   localStorage and reused for later sessions: the join form comes prefilled,
+   but joining always takes a tap, so a `/join?pin=...` link alone can never
+   hand a nickname to a session. The number of joined players is shown.
 2. **Question active**: host clicks "Start question" and broadcasts a
    snapshot with the new question index. The host screen renders the full
    prompt/options (§8); the **player screen intentionally renders none of

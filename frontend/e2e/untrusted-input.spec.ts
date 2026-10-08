@@ -76,3 +76,23 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
 
   await expect(host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ })).toBeVisible();
 });
+
+test("a join link never joins without a tap", async ({ browser }) => {
+  // Anyone can send a pupil a /join?pin=... link; with a nickname remembered
+  // from an earlier quiz, opening it must not hand that name to the session.
+  const host = await (await browser.newContext()).newPage();
+  const player = await (await browser.newContext()).newPage();
+  await host.goto("/");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = await host.locator(".host-lobby__pin").textContent();
+
+  await player.goto("/join");
+  await player.evaluate(() => localStorage.setItem("math-quiz-nickname", "Ada"));
+  await player.goto(`/join?pin=${pin}`);
+  await expect(player.getByLabel("Nickname")).toHaveValue("Ada");
+  await player.waitForTimeout(3000);
+  await expect(host.locator(".host-lobby__count")).toHaveText("0 Spieler:innen beigetreten");
+
+  await player.getByRole("button", { name: "Beitreten" }).click();
+  await expect(host.locator(".host-lobby__count")).toHaveText("1 Spieler:innen beigetreten");
+});
