@@ -109,6 +109,35 @@ async def test_create_session_redraws_a_pin_that_is_already_live(client, monkeyp
     assert (await _create_session(client))["pin"] == "222222"
 
 
+async def test_create_session_fails_instead_of_hanging_when_no_pin_is_free(
+    client, monkeypatch
+):
+    # An endless redraw loop would block the event loop and with it every
+    # running session.
+    monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: "1")
+    relay.live_sessions["111111"] = ("aaaaaaaaaaaa", int(time.time()) + 60)
+
+    response = await asyncio.wait_for(client.post("/session"), timeout=5)
+    assert response.status_code == 503
+
+
+async def test_create_session_fails_once_the_live_session_cap_is_reached(
+    client, monkeypatch
+):
+    monkeypatch.setattr(relay, "MAX_LIVE_SESSIONS", 2)
+    await _create_session(client)
+    await _create_session(client)
+
+    assert (await client.post("/session")).status_code == 503
+
+
+async def test_expired_reservations_free_their_pin(client, monkeypatch):
+    relay.live_sessions["111111"] = ("aaaaaaaaaaaa", int(time.time()) - 1)
+    monkeypatch.setattr(relay.secrets, "choice", lambda _alphabet: "1")
+
+    assert (await _create_session(client))["pin"] == "111111"
+
+
 async def test_end_session_releases_the_pin(client):
     session = await _create_session(client)
     assert session["pin"] in relay.live_sessions

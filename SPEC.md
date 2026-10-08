@@ -463,7 +463,11 @@ carrying a valid token for a pin is served whether or not this process ever
 minted it. Pins, however, **are** checked for collisions: the relay keeps an
 in-memory map from each pin currently in use to the session holding it, and
 re-draws until it finds a pin that is neither held nor still has anyone
-connected to it, so two live hosts can never share a topic. A host token is
+connected to it, so two live hosts can never share a topic. Both the number
+of draws and the number of live sessions (100 000, a tenth of the pin space)
+are capped; past either, creating a session fails with `503` rather than
+redrawing forever, which would block the event loop and stall every running
+session. A host token is
 only accepted for the session that currently holds its pin; after a restart
 the map is empty, and the first valid, unexpired host token seen for a pin
 claims it again. `DELETE /api/v1/session/{pin}` releases the pin when the

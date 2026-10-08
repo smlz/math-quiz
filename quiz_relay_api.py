@@ -63,6 +63,13 @@ API_PREFIX = "/api/v1"
 PIN_ALPHABET = "0123456789"
 PIN_LENGTH = 6
 PIN_PATTERN = r"^\d{6}$"
+# Far below the 10^6 pins there are, so a free pin is almost always found on
+# the first draw and the live-session map stays small. Past the cap -- or if a
+# free pin is not found within a bounded number of draws -- creating a session
+# fails with 503 instead of spinning on the event loop, which would stall
+# every running session along with it.
+MAX_LIVE_SESSIONS = 100_000
+MAX_PIN_DRAWS = 50
 
 # urlsafe-b64 of a SHA-256 digest, minus padding.
 _SIGNATURE_LENGTH = 43
@@ -225,6 +232,18 @@ def _message_topic(pin: str) -> str:
     return f"{pin}:message"
 
 
+def _purge_expired(now: float) -> None:
+    """Drop expired reservations from the front of the map. Entries are
+    inserted in (nearly) expiry order, so this is amortised O(1); the rare
+    straggler behind a younger entry is still treated as free by
+    `_pin_in_use` and only lingers until the purge reaches it."""
+    while live_sessions:
+        pin, (_, expires) = next(iter(live_sessions.items()))
+        if expires > now:
+            return
+        del live_sessions[pin]
+
+
 def _pin_in_use(pin: str, now: float) -> bool:
     """A pin is taken while a session holds it -- or while anyone is still
     connected to it, which after a restart is the only trace left of a quiz
@@ -291,10 +310,15 @@ async def health():
 @router.post("/session", response_model=CreateSessionResponse)
 async def create_session():
     now = time.time()
-    while True:
+    _purge_expired(now)
+    if len(live_sessions) >= MAX_LIVE_SESSIONS:
+        raise HTTPException(status_code=503, detail="Too many live sessions")
+    for _ in range(MAX_PIN_DRAWS):
         pin = "".join(secrets.choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
         if not _pin_in_use(pin, now):
             break
+    else:
+        raise HTTPException(status_code=503, detail="No free pin")
     session_id = secrets.token_urlsafe(9)
     expires = int(now) + SESSION_TTL_SECONDS
     live_sessions.pop(pin, None)
