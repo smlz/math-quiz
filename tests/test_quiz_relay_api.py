@@ -294,6 +294,40 @@ async def test_publish_message_requires_the_player_token(client):
     ).status_code == 422
 
 
+async def test_oversized_body_is_rejected(client):
+    session = await _create_session(client)
+    player = await _join(client, session["pin"])
+
+    response = await client.post(
+        f"/session/{session['pin']}/message",
+        json={"nickname": "A" * relay.MAX_BODY_BYTES},
+        headers={relay.PLAYER_TOKEN_HEADER: player["player_token"]},
+    )
+    assert response.status_code == 413
+
+
+async def test_oversized_chunked_body_is_rejected(client):
+    # No Content-Length to check up front: the limit must hold while reading.
+    session = await _create_session(client)
+
+    async def chunks():
+        yield b'{"padding":"'
+        for _ in range(relay.MAX_BODY_BYTES // 1024 + 1):
+            yield b"A" * 1024
+        yield b'"}'
+
+    response = await client.post(
+        f"/session/{session['pin']}/state",
+        content=chunks(),
+        headers={
+            relay.HOST_TOKEN_HEADER: session["host_token"],
+            "Content-Type": "application/json",
+        },
+    )
+    assert "content-length" not in response.request.headers
+    assert response.status_code == 413
+
+
 async def test_player_token_is_bound_to_its_session(client):
     other = await _create_session(client)
     session = await _create_session(client)

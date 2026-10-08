@@ -55,8 +55,9 @@ from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 API_PREFIX = "/api/v1"
 
@@ -84,6 +85,11 @@ PLAYER_TOKEN_PATTERN = rf"^[A-Za-z0-9_-]{{12}}\.[A-Za-z0-9_-]{{{_SIGNATURE_LENGT
 
 HOST_TOKEN_HEADER = "X-Host-Token"
 PLAYER_TOKEN_HEADER = "X-Player-Token"
+
+# Snapshots and player messages are a few hundred bytes; this still fits a
+# snapshot listing thousands of players. Anything bigger is abuse, and every
+# frame is held in up to QUEUE_SIZE slots per topic.
+MAX_BODY_BYTES = 64 * 1024
 
 KEEP_ALIVE_SECONDS = 20
 # One slot is enough for the state stream (only the newest snapshot matters)
@@ -271,6 +277,42 @@ class JoinSessionResponse(BaseModel):
 
 # App
 
+
+class BodySizeLimitMiddleware:
+    """Reject request bodies over `max_bytes` with 413 before they are
+    buffered: up front from `Content-Length`, and while streaming for a
+    chunked body that does not announce its size."""
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        content_length = dict(scope["headers"]).get(b"content-length", b"")
+        if content_length.isdigit() and int(content_length) > self.max_bytes:
+            await JSONResponse(
+                {"detail": "Request body too large"}, status_code=413
+            )(scope, receive, send)
+            return
+
+        received = 0
+
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    # FastAPI re-raises an HTTPException from body parsing.
+                    raise HTTPException(status_code=413, detail="Request body too large")
+            return message
+
+        await self.app(scope, limited_receive, send)
+
 # Only the deployed frontend is allowed to call the relay from a browser,
 # plus the local Vite dev/preview origins so a checkout can talk to a running
 # relay. `ALLOWED_ORIGINS` (comma-separated) replaces the list entirely, e.g.
@@ -290,6 +332,8 @@ ALLOWED_ORIGINS = (
 )
 
 app = FastAPI(title="Quiz Relay API")
+# Added before CORS so CORS wraps it and a 413 still reaches the browser.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_BODY_BYTES)
 # No cookies or HTTP auth travel with a request -- identity is a token in a
 # custom header -- so credentialed cross-origin requests stay disallowed.
 app.add_middleware(

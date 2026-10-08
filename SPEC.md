@@ -559,8 +559,8 @@ purges the whole map.
   rather than access control: the pin and tokens are what actually protect
   a session (§4.2), since a non-browser client ignores CORS entirely.
 - Reasonable input validation: PIN and token shape are checked before any
-  work happens. Payloads are otherwise opaque and are not validated by the
-  relay — the host ignores messages from senders it has not seen join, and
+  work happens. Request bodies are capped at 64 KiB (`413` beyond that).
+  Payloads are otherwise opaque and are not validated by the relay — the host ignores messages from senders it has not seen join, and
   answers for the wrong question index.
 - Accepted risks, given 25 pupils in one room: anyone who knows the pin can
   read the state stream and mint a player token, so a determined student
