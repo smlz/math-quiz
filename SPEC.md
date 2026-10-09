@@ -572,8 +572,11 @@ purges the whole map.
   host ignores messages from senders it has not seen join, and answers for
   the wrong question index. Since anyone who knows the pin can mint a token
   and send any JSON object, the host treats every payload as untrusted: a
-  nickname must be a string and is trimmed to 30 characters, an id that has
-  joined cannot rename itself, `option_index` must be an integer within the
+  nickname must be a string; it is normalised (NFKC), stripped of invisible
+  and direction-override characters and of excess combining marks, cut to 30
+  characters, and numbered if the name is already taken ("Ada (2)"), so
+  nobody can pass as a classmate on the projector. An id that has joined
+  cannot rename itself, `option_index` must be an integer within the
   question's options, and the roster is capped at 200 players.
 - Accepted risks, given 25 pupils in one room: anyone who knows the pin can
   read the state stream and mint a player token, so a determined student

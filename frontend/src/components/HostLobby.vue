@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 
 const props = defineProps<{
   pin: string;
-  nicknames: string[];
+  players: { player_id: string; nickname: string }[];
 }>();
 
 defineEmits<{ start: []; end: [] }>();
@@ -30,11 +30,11 @@ watch(
     <h2>Beitreten auf <a :href="joinBase">{{ joinBase }}</a></h2>
     <p class="host-lobby__pin">{{ pin }}</p>
     <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
-    <p class="host-lobby__count">{{ nicknames.length }} Spieler:innen beigetreten</p>
+    <p class="host-lobby__count">{{ players.length }} Spieler:innen beigetreten</p>
     <ul class="host-lobby__roster">
-      <li v-for="nickname in nicknames" :key="nickname">{{ nickname }}</li>
+      <li v-for="player in players" :key="player.player_id">{{ player.nickname }}</li>
     </ul>
-    <button type="button" class="host-lobby__start" :disabled="nicknames.length === 0" @click="$emit('start')">
+    <button type="button" class="host-lobby__start" :disabled="players.length === 0" @click="$emit('start')">
       Frage starten
     </button>
     <button type="button" class="host-lobby__end" @click="$emit('end')">Quiz abbrechen</button>

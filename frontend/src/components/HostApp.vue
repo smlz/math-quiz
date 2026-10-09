@@ -17,6 +17,7 @@ import {
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
+import { cleanNickname } from "../quiz/nickname";
 import { parseQuiz } from "../quiz/parseQuiz";
 import { fetchQuizSource } from "../quiz/remoteSource";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
@@ -31,7 +32,6 @@ const PREVIEW_DEBOUNCE_MS = 300;
 // Generous for one class, but bounds what a flood of joins from strangers who
 // guessed the pin can do to the roster, the projector and every snapshot.
 const MAX_PLAYERS = 200;
-const MAX_NICKNAME_LENGTH = 30;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -100,7 +100,7 @@ const correctOrder = ref<string[]>([]);
 let unsubscribe: (() => void) | null = null;
 let heartbeat: number | null = null;
 
-const nicknames = computed(() => [...roster.values()]);
+const lobbyPlayers = computed(() => [...roster].map(([player_id, nickname]) => ({ player_id, nickname })));
 
 const currentQuestion = computed<QuestionState | null>(() =>
   quiz.value && currentQuestionIndex.value >= 0 ? quiz.value.questions[currentQuestionIndex.value] : null,
@@ -263,8 +263,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     // ignored -- a real player always re-sends the nickname it joined with.
     if (roster.has(player_id) || roster.size >= MAX_PLAYERS) return;
     if (typeof payload.nickname !== "string") return;
-    // Same limit as the join form's maxlength, which only binds honest clients.
-    const nickname = Array.from(payload.nickname.trim()).slice(0, MAX_NICKNAME_LENGTH).join("");
+    const nickname = cleanNickname(payload.nickname, roster.values());
     if (!nickname) return;
     roster.set(player_id, nickname);
     if (!scores.has(player_id)) scores.set(player_id, 0);
@@ -540,7 +539,7 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'lobby' && pin">
       <div class="host-app__panel">
-        <HostLobby :pin="pin" :nicknames="nicknames" @start="startQuestion(0)" @end="endQuizNow" />
+        <HostLobby :pin="pin" :players="lobbyPlayers" @start="startQuestion(0)" @end="endQuizNow" />
       </div>
     </template>
 

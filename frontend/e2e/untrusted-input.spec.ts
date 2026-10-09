@@ -56,6 +56,7 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
   const long = await mintPlayer(request, pin);
   const bogus = await mintPlayer(request, pin);
   const sentinel = await mintPlayer(request, pin);
+  const twin = await mintPlayer(request, pin);
 
   await send(request, pin, bogus, { type: "join", nickname: { toString: "no" } });
   await send(request, pin, bogus, { type: "join", nickname: "   " });
@@ -64,9 +65,11 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
   // The host handles messages in order, so once this one shows up every
   // message before it has been dealt with.
   await send(request, pin, sentinel, { type: "join", nickname: "Zed" });
+  // A look-alike of a name already taken gets numbered instead.
+  await send(request, pin, twin, { type: "join", nickname: String.fromCodePoint(0x202e) + "zed" + String.fromCodePoint(0x200b) });
 
   const names = host.locator(".host-lobby li");
-  await expect(names).toHaveText(["X".repeat(30), "Zed"]);
+  await expect(names).toHaveText(["X".repeat(30), "Zed", "zed (2)"]);
 
   await host.getByRole("button", { name: "Frage starten" }).click();
   await send(request, pin, long, { type: "answer", question_index: 0, option_index: 7 });
@@ -74,7 +77,7 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
   await send(request, pin, bogus, { type: "answer", question_index: 0, option_index: 0 });
   await send(request, pin, sentinel, { type: "answer", question_index: 0, option_index: 0 });
 
-  await expect(host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ })).toBeVisible();
+  await expect(host.getByRole("button", { name: /Antwort zeigen · 1 von 3 beantwortet/ })).toBeVisible();
 });
 
 test("a join link never joins without a tap", async ({ browser }) => {
