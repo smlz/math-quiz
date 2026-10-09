@@ -52,6 +52,10 @@ export interface SessionSnapshot {
   players: string[];
   /** Reveal only, so nobody learns the answer early. */
   correct_index?: number;
+  /** Players the host removed from this session (e.g. for a rude nickname).
+   * A removed player's device drops its identity and offers to join again
+   * under a new name; the host ignores the old id from then on. */
+  removed?: string[];
 }
 
 export type PlayerMessage =

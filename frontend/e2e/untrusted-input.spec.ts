@@ -68,7 +68,7 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
   // A look-alike of a name already taken gets numbered instead.
   await send(request, pin, twin, { type: "join", nickname: String.fromCodePoint(0x202e) + "zed" + String.fromCodePoint(0x200b) });
 
-  const names = host.locator(".host-lobby li");
+  const names = host.locator(".host-lobby__name");
   await expect(names).toHaveText(["X".repeat(30), "Zed", "zed (2)"]);
 
   await host.getByRole("button", { name: "Frage starten" }).click();

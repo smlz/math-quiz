@@ -8,7 +8,12 @@ import {
   type ConnectionStatus,
   type SessionSnapshot,
 } from "../api/quizClient";
-import { clearPlayerSession, savePlayerSession, type StoredPlayerSession } from "../api/storedSession";
+import {
+  clearPlayerSession,
+  forgetNickname,
+  savePlayerSession,
+  type StoredPlayerSession,
+} from "../api/storedSession";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
@@ -35,6 +40,9 @@ const lastPoints = ref(0);
 const revealCorrectIndex = ref<number | null>(null);
 const myScore = ref(0);
 const myRank = ref<number | null>(null);
+// Prefill and explanation for the join form after the host removed us.
+const joinPin = ref<string | undefined>();
+const joinNotice = ref<string | undefined>();
 
 // The host re-broadcasts the same reveal snapshot every few seconds, so the
 // score must only be taken from the first one seen per question.
@@ -58,6 +66,10 @@ function handleSnapshot(snapshot: SessionSnapshot) {
 
   const me = playerId.value;
   if (!me) return;
+  if (snapshot.removed?.includes(me)) {
+    leaveAfterRemoval();
+    return;
+  }
   const listed = snapshot.players.includes(me);
 
   if (snapshot.phase === "question" && snapshot.question_index !== currentQuestionIndex.value) {
@@ -156,7 +168,34 @@ function teardown() {
   }
 }
 
+/** The host removed this player, most likely over its nickname. The id is
+ * dead for this session, so forget it along with the remembered name and
+ * offer the join form again: joining anew mints a fresh id under a new name. */
+function leaveAfterRemoval() {
+  teardown();
+  if (pin.value) clearPlayerSession(pin.value);
+  forgetNickname();
+  joinPin.value = pin.value ?? undefined;
+  joinNotice.value = "Die Lehrperson hat dich aus dem Quiz entfernt. Wähle einen anderen Namen, um wieder beizutreten.";
+
+  playerId.value = null;
+  playerToken.value = null;
+  nickname.value = null;
+  currentQuestionIndex.value = null;
+  selectedIndex.value = null;
+  answeredQuestionIndex.value = null;
+  joinAcknowledged.value = false;
+  answerAcknowledged.value = false;
+  lastPoints.value = 0;
+  revealCorrectIndex.value = null;
+  myScore.value = 0;
+  myRank.value = null;
+  scoredQuestionIndex = -1;
+  status.value = "join";
+}
+
 function onJoined(session: StoredPlayerSession) {
+  joinNotice.value = undefined;
   pin.value = session.pin;
   playerId.value = session.playerId;
   playerToken.value = session.playerToken;
@@ -199,7 +238,7 @@ onUnmounted(teardown);
 
 <template>
   <div class="player-app">
-    <PlayerJoin v-if="status === 'join'" @joined="onJoined" />
+    <PlayerJoin v-if="status === 'join'" :initial-pin="joinPin" :notice="joinNotice" @joined="onJoined" />
 
     <template v-else>
       <header class="player-app__header">

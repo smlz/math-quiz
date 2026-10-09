@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { joinSession } from "../api/quizClient";
-import { loadPlayerSession, savePlayerSession, type StoredPlayerSession } from "../api/storedSession";
+import {
+  loadNickname,
+  loadPlayerSession,
+  saveNickname,
+  savePlayerSession,
+  type StoredPlayerSession,
+} from "../api/storedSession";
 
-const NICKNAME_STORAGE_KEY = "math-quiz-nickname";
+const props = defineProps<{
+  /** Pin to prefill when the link that opened the page carries none. */
+  initialPin?: string;
+  /** Shown above the form, e.g. after the host removed this player. */
+  notice?: string;
+}>();
 
 const params = new URLSearchParams(location.search);
-const pin = ref(params.get("pin") ?? "");
-const storedNickname = localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "";
+const pin = ref(params.get("pin") ?? props.initialPin ?? "");
+const storedNickname = loadNickname();
 const nickname = ref(storedNickname);
 const nicknameReadonly = ref(!!storedNickname);
 const error = ref("");
@@ -34,7 +45,7 @@ async function join() {
     // Minting an identity is anonymous; the nickname reaches the host as an
     // ordinary message, retried by PlayerApp until the roster confirms it.
     const { playerId, playerToken } = await joinSession(trimmedPin);
-    localStorage.setItem(NICKNAME_STORAGE_KEY, trimmedNickname);
+    saveNickname(trimmedNickname);
     const session: StoredPlayerSession = {
       pin: trimmedPin,
       playerId,
@@ -75,6 +86,7 @@ onMounted(() => {
 
   <form v-else class="player-join" @submit.prevent="join()">
     <h2>Einem Quiz beitreten</h2>
+    <p v-if="notice" class="player-join__notice">{{ notice }}</p>
     <label>
       Spiel-PIN
       <input v-model="pin" inputmode="numeric" maxlength="6" placeholder="123456" />
@@ -108,6 +120,12 @@ onMounted(() => {
   font-size: 1.1rem;
   padding: 0.5rem;
   box-sizing: border-box;
+}
+.player-join__notice {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  background: #fff4e5;
+  border-radius: 6px;
 }
 .player-join__error {
   color: #b00020;

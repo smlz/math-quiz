@@ -9,6 +9,8 @@
 
 const PLAYER_KEY_PREFIX = "math-quiz-player:";
 const HOST_KEY = "math-quiz-host";
+// The nickname last joined with, prefilled into the next join form.
+const NICKNAME_KEY = "math-quiz-nickname";
 
 export interface StoredPlayerSession {
   pin: string;
@@ -34,6 +36,9 @@ export interface StoredHostSession {
   answers: [string, number][];
   /** Frozen at reveal, so a reload cannot re-score the same question. */
   correctOrder: string[];
+  /** Removed player ids, still ignored after a reload. Absent in entries
+   * written before players could be removed. */
+  removed?: string[];
 }
 
 function read<T>(key: string): T | null {
@@ -78,4 +83,25 @@ export function saveHostSession(session: StoredHostSession): void {
 
 export function clearHostSession(): void {
   localStorage.removeItem(HOST_KEY);
+}
+
+export function loadNickname(): string {
+  try {
+    return localStorage.getItem(NICKNAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// Stored as the bare string, not JSON, as it always has been.
+export function saveNickname(nickname: string): void {
+  try {
+    localStorage.setItem(NICKNAME_KEY, nickname);
+  } catch (e) {
+    console.warn("Could not remember nickname", e);
+  }
+}
+
+export function forgetNickname(): void {
+  localStorage.removeItem(NICKNAME_KEY);
 }

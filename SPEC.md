@@ -221,6 +221,11 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    localStorage and reused for later sessions: the join form comes prefilled,
    but joining always takes a tap, so a `/join?pin=...` link alone can never
    hand a nickname to a session. The number of joined players is shown.
+   The host can remove a player from the lobby or the in-game leaderboard,
+   mainly for a rude nickname. The removed id is ignored for the rest of the
+   session and listed in the snapshot's `removed` field; that player's device
+   then forgets its identity and remembered nickname and shows the join form
+   again, so the pupil can rejoin under another name with a fresh id.
 2. **Question active**: host clicks "Start question" and broadcasts a
    snapshot with the new question index. The host screen renders the full
    prompt/options (§8); the **player screen intentionally renders none of

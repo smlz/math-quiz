@@ -7,7 +7,7 @@ const props = defineProps<{
   players: { player_id: string; nickname: string }[];
 }>();
 
-defineEmits<{ start: []; end: [] }>();
+defineEmits<{ start: []; end: []; remove: [playerId: string] }>();
 
 // BASE_URL already has a trailing slash; it is "/" both in dev and on
 // quiz.smlz.ch, but going through it keeps the link correct if the app is
@@ -32,7 +32,18 @@ watch(
     <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
     <p class="host-lobby__count">{{ players.length }} Spieler:innen beigetreten</p>
     <ul class="host-lobby__roster">
-      <li v-for="player in players" :key="player.player_id">{{ player.nickname }}</li>
+      <li v-for="player in players" :key="player.player_id">
+        <span class="host-lobby__name">{{ player.nickname }}</span>
+        <button
+          type="button"
+          class="host-lobby__remove"
+          :aria-label="`${player.nickname} entfernen`"
+          :title="`${player.nickname} entfernen`"
+          @click="$emit('remove', player.player_id)"
+        >
+          ×
+        </button>
+      </li>
     </ul>
     <button type="button" class="host-lobby__start" :disabled="players.length === 0" @click="$emit('start')">
       Frage starten
@@ -89,6 +100,24 @@ watch(
 .host-lobby__roster li {
   background: #f0f0f0;
   border-radius: 999px;
-  padding: 0.25rem 0.9rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.9rem;
+}
+.host-lobby__remove {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  min-height: 0;
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  /* Unobtrusive on the projector until the teacher points at it. */
+  opacity: 0.4;
+}
+.host-lobby__remove:hover,
+.host-lobby__remove:focus-visible {
+  opacity: 1;
+  color: #b00020;
 }
 </style>

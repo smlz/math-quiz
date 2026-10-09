@@ -88,6 +88,9 @@ const connection = ref<ConnectionStatus>("open");
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
+// Players the teacher removed (e.g. for a rude nickname). Their ids are
+// ignored for the rest of the session; rejoining takes a fresh id.
+const removed = reactive(new Set<string>());
 
 const currentQuestionIndex = ref(-1);
 // Insertion order is arrival order, which is exactly what decides the 12/11/10
@@ -237,6 +240,8 @@ function buildSnapshot(): SessionSnapshot {
     ...(phase === "reveal" && currentQuestion.value
       ? { correct_index: currentQuestion.value.correctIndex }
       : {}),
+    // Tells a removed player's device to drop its identity.
+    ...(removed.size ? { removed: [...removed] } : {}),
   };
 }
 
@@ -258,6 +263,7 @@ async function broadcast() {
  * any JSON object at all, so the payload is untrusted input: only the
  * relay-attributed `player_id` can be relied on. */
 function handleMessage({ player_id, payload }: IncomingMessage) {
+  if (removed.has(player_id)) return;
   if (payload.type === "join") {
     // The first join wins: retries, and renames from an id already seen, are
     // ignored -- a real player always re-sends the nickname it joined with.
@@ -315,6 +321,7 @@ function persistSession() {
     scores: [...scores],
     answers: [...answers],
     correctOrder: correctOrder.value,
+    removed: [...removed],
   });
 }
 
@@ -328,6 +335,7 @@ watch(
     [...roster],
     [...scores],
     [...answers],
+    [...removed],
   ],
   persistSession,
   { deep: true },
@@ -348,6 +356,7 @@ if (restored?.hostToken) {
     for (const [playerId, nickname] of restored.roster) roster.set(playerId, nickname);
     for (const [playerId, score] of restored.scores) scores.set(playerId, score);
     for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
+    for (const playerId of restored.removed ?? []) removed.add(playerId);
     status.value = restored.status as Status;
   } catch {
     quiz.value = null;
@@ -410,6 +419,21 @@ async function reveal() {
   await broadcast();
 }
 
+/** Takes a player out of the game, mainly for a rude nickname. Their device
+ * learns it from the next snapshot and offers to join again under a new name,
+ * starting from zero points. */
+async function removePlayer(playerId: string) {
+  const nickname = roster.get(playerId);
+  if (nickname === undefined) return;
+  if (!window.confirm(`«${nickname}» aus dem Quiz entfernen? Die Person kann mit einem anderen Namen neu beitreten.`)) return;
+  removed.add(playerId);
+  roster.delete(playerId);
+  scores.delete(playerId);
+  answers.delete(playerId);
+  correctOrder.value = correctOrder.value.filter((id) => id !== playerId);
+  await broadcast();
+}
+
 async function showLeaderboard() {
   status.value = "leaderboard";
   await broadcast();
@@ -456,6 +480,7 @@ function resetToSetup() {
   roster.clear();
   scores.clear();
   answers.clear();
+  removed.clear();
 }
 
 /** Host-initiated early abort, available any time a session is running.
@@ -539,7 +564,13 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'lobby' && pin">
       <div class="host-app__panel">
-        <HostLobby :pin="pin" :players="lobbyPlayers" @start="startQuestion(0)" @end="endQuizNow" />
+        <HostLobby
+          :pin="pin"
+          :players="lobbyPlayers"
+          @start="startQuestion(0)"
+          @end="endQuizNow"
+          @remove="removePlayer"
+        />
       </div>
     </template>
 
@@ -563,7 +594,7 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :finished="false" />
+        <HostLeaderboard :standings="standings" :finished="false" @remove="removePlayer" />
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
