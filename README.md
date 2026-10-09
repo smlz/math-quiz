@@ -33,6 +33,8 @@ risk!
 - The host page loads the Typst compiler, its fonts and packages from
   jsDelivr and packages.typst.org. Player devices load nothing from third
   parties.
+- There are no ads, no analytics, no tracking, no telemetry, no cookies, no
+  social media buttons, no external scripts.
 
 ## Architecture
 
