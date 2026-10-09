@@ -101,6 +101,14 @@ npx playwright install chromium   # once
 npm run test:e2e
 ```
 
+This runs Chromium only. CI also runs Firefox and WebKit; to do the same
+locally:
+
+```powershell
+npx playwright install firefox webkit   # once
+npm run test:e2e:all                    # or: npx playwright test --project=webkit
+```
+
 The Playwright config starts both the backend and the Vite dev server itself,
 so no servers need to be running beforehand.
 

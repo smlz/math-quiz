@@ -37,6 +37,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      # Let every browser finish, so one failure doesn't hide another.
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -54,6 +59,6 @@ jobs:
       - working-directory: frontend
         run: npm ci
       - working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${{ matrix.browser }}
       - working-directory: frontend
-        run: npm run test:e2e
+        run: npx playwright test --project=${{ matrix.browser }}

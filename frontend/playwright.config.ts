@@ -19,17 +19,28 @@ export default defineConfig({
   reporter: [["list"], ["./e2e/github-summary-reporter.ts"]],
   expect: {
     // typst.ts fetches its WASM compiler/renderer (and any @preview
-    // packages) from a CDN on first use (SPEC.md §11), which can be slow.
-    timeout: 20_000,
+    // packages) from a CDN on first use (SPEC.md §11), which can be slow -
+    // and compiling the cetz example quiz takes over 20s in WebKit/Firefox.
+    timeout: 60_000,
   },
   use: {
     baseURL: "http://127.0.0.1:5173",
     trace: "retain-on-failure",
   },
+  // Players join on phones, and every iOS browser runs on WebKit. CI runs
+  // each project as its own job (see .github/workflows/test.yml).
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
     },
   ],
   webServer: [
