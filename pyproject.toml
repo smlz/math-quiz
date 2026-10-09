@@ -1,6 +1,6 @@
 [project]
 name = "math-quiz"
-version = "1.0.1"
+version = "1.0.2"
 description = "Live math quiz relay backend"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
