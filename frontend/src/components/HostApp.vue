@@ -594,7 +594,7 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :finished="false" @remove="removePlayer" />
+        <HostLeaderboard :standings="standings" :finished="false"/>
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
       <div class="host-app__footer">

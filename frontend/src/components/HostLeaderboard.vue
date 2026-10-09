@@ -7,8 +7,6 @@ const props = defineProps<{
   finished: boolean;
 }>();
 
-defineEmits<{ remove: [playerId: string] }>();
-
 // Only the top 5 players are shown, regardless of how many joined.
 const topStandings = computed(() => props.standings.slice(0, 5));
 </script>
@@ -21,17 +19,6 @@ const topStandings = computed(() => props.standings.slice(0, 5));
         <span class="leaderboard__rank">{{ entry.rank }}</span>
         <span class="leaderboard__nickname">{{ entry.nickname }}</span>
         <span class="leaderboard__score">{{ entry.score }}</span>
-        <!-- Not on the final screen: the game is over by then. -->
-        <button
-          v-if="!finished"
-          type="button"
-          class="leaderboard__remove"
-          :aria-label="`${entry.nickname} entfernen`"
-          :title="`${entry.nickname} entfernen`"
-          @click="$emit('remove', entry.player_id)"
-        >
-          ×
-        </button>
       </li>
     </ol>
   </section>
@@ -76,23 +63,5 @@ const topStandings = computed(() => props.standings.slice(0, 5));
 .leaderboard__score {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-.leaderboard__remove {
-  margin-left: 0.4rem;
-  padding: 0 0.3rem;
-  min-height: 0;
-  background: none;
-  border: none;
-  color: #999;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  /* Unobtrusive on the projector until the teacher points at it. */
-  opacity: 0.4;
-}
-.leaderboard__remove:hover,
-.leaderboard__remove:focus-visible {
-  opacity: 1;
-  color: #b00020;
 }
 </style>
