@@ -17,7 +17,8 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   build:
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     # `npm ci` runs every dependency's install scripts here, so this job gets
     # nothing beyond read access; only deploy-frontend can publish to Pages.
@@ -57,10 +58,11 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
-  backend-changes:
+  changes:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.check.outputs.changed }}
+      frontend: ${{ steps.check.outputs.frontend }}
+      backend: ${{ steps.check.outputs.backend }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,19 +74,25 @@ jobs:
         run: |
           # No usable diff base (manual run, force-push, first push) => deploy.
           if [ "$EVENT_NAME" != "push" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "backend=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- \
-            quiz_relay_api.py pyproject.toml uv.lock .github/workflows/deploy.yml; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+          changed() {
+            if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- "$@"; then echo false; else echo true; fi
+          }
+          # A release commit only bumps pyproject.toml, but the frontend is
+          # still rebuilt so its footer picks up the new tag.
+          if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=$(changed frontend typst .github/workflows/deploy.yml)" >> "$GITHUB_OUTPUT"
           fi
+          echo "backend=$(changed quiz_relay_api.py pyproject.toml uv.lock .github/workflows/deploy.yml)" >> "$GITHUB_OUTPUT"
 
   deploy-backend:
-    needs: [test, backend-changes]
-    if: needs.backend-changes.outputs.changed == 'true'
+    needs: [test, changes]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
