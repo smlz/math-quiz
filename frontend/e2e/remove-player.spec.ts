@@ -19,7 +19,7 @@ test("host removes a player, who can rejoin under a new name", async ({ browser 
   await host.getByRole("button", { name: "Rude entfernen" }).click();
 
   // The pupil's device drops its identity and the remembered name...
-  await expect(pupil.locator(".player-join__notice")).toContainText("aus dem Quiz entfernt");
+  await expect(pupil.locator(".player-join__notice")).toContainText("anderen Namen");
   await expect(pupil.getByLabel("Spiel-PIN")).toHaveValue(pin);
   await expect(pupil.getByLabel("Nickname")).toHaveValue("");
   await expect(pupil.getByLabel("Nickname")).toBeEditable();

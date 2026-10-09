@@ -176,7 +176,7 @@ function leaveAfterRemoval() {
   if (pin.value) clearPlayerSession(pin.value);
   forgetNickname();
   joinPin.value = pin.value ?? undefined;
-  joinNotice.value = "Die Lehrperson hat dich aus dem Quiz entfernt. Wähle einen anderen Namen, um wieder beizutreten.";
+  joinNotice.value = "Wähle einen anderen Namen, um wieder beizutreten.";
 
   playerId.value = null;
   playerToken.value = null;
