@@ -4,6 +4,8 @@ import asyncio
 import contextlib
 import re
 import time
+import tomllib
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -73,6 +75,15 @@ def _parse_sse(frame: bytes) -> tuple[str, str]:
     match = re.fullmatch(r"event: (.+)\ndata: (.+)\n\n", frame.decode())
     assert match, f"not an SSE data frame: {frame!r}"
     return match.group(1), match.group(2)
+
+
+# Metadata
+
+
+def test_openapi_reports_the_pyproject_version():
+    with open(Path(relay.__file__).with_name("pyproject.toml"), "rb") as f:
+        expected = tomllib.load(f)["project"]["version"]
+    assert relay.app.openapi()["info"]["version"] == expected
 
 
 # Minting

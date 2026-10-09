@@ -49,8 +49,10 @@ import hashlib
 import hmac
 import json
 import os
+import pathlib
 import secrets
 import time
+import tomllib
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Path
@@ -331,7 +333,12 @@ ALLOWED_ORIGINS = (
     else [FRONTEND_ORIGIN, *DEV_ORIGINS]
 )
 
-app = FastAPI(title="Quiz Relay API")
+# The project is not installed as a package (`[tool.uv] package = false`), so
+# importlib.metadata has nothing to report -- pyproject.toml is read directly.
+with open(pathlib.Path(__file__).with_name("pyproject.toml"), "rb") as _pyproject:
+    __version__ = tomllib.load(_pyproject)["project"]["version"]
+
+app = FastAPI(title="Quiz Relay API", version=__version__)
 # Added before CORS so CORS wraps it and a 413 still reaches the browser.
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_BODY_BYTES)
 # No cookies or HTTP auth travel with a request -- identity is a token in a
