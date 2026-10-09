@@ -27,7 +27,7 @@ export function sanitizeSvg(svg: string): string {
     for (const attr of Array.from(element.attributes)) {
       // Browsers ignore control characters and spaces when reading a URL's
       // scheme, so "java\tscript:" must not slip past the checks below.
-      const value = attr.value.replace(/[\u0000- ]/g, "");
+      const value = Array.from(attr.value).filter((char) => char.codePointAt(0)! > 0x20).join("");
       if (/^on/i.test(attr.localName)) {
         element.removeAttributeNode(attr);
       } else if (attr.localName === "href" || attr.localName === "src" || attr.localName === "action") {
