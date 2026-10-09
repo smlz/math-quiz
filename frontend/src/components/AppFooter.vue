@@ -10,10 +10,12 @@ const SOURCE_URL = "https://github.com/smlz/math-quiz";
 
 // The commit this bundle was built from and its tag, if any (vite.config.ts),
 // so the link leads to exactly the source that is running; null for what
-// couldn't be determined.
+// couldn't be determined. The tag reads nicer in the URL; the label keeps the
+// commit hash, which a moved tag can't change.
 declare const __SOURCE_VERSION__: { commit: string | null; tag: string | null };
 const { commit, tag } = __SOURCE_VERSION__;
-const sourceHref = commit ? `${SOURCE_URL}/tree/${commit}` : SOURCE_URL;
+const ref = tag ?? commit;
+const sourceHref = ref ? `${SOURCE_URL}/tree/${ref}` : SOURCE_URL;
 const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
 </script>
 
