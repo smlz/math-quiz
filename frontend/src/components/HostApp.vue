@@ -23,15 +23,13 @@ import { fetchQuizSource } from "../quiz/remoteSource";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
 import { renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
+import AppFooter from "./AppFooter.vue";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
-// AGPL §13: users interacting with the app over a network get a way to the
-// source. A modified deployment must point this at its own source.
-const SOURCE_URL = "https://github.com/smlz/math-quiz";
 // Generous for one class, but bounds what a flood of joins from strangers who
 // guessed the pin can do to the roster, the projector and every snapshot.
 const MAX_PLAYERS = 200;
@@ -543,10 +541,7 @@ onUnmounted(() => {
         </div>
 
         <div class="host-app__preview">
-          <div class="host-app__preview-header">
-            <h2>Vorschau</h2>
-            <a class="host-app__source-link" :href="SOURCE_URL" target="_blank" rel="noopener">Quellcode ↗</a>
-          </div>
+          <h2>Vorschau</h2>
           <div class="host-app__preview-list">
             <ul v-if="previewErrors.length" class="host-app__errors">
               <li v-for="issue in previewErrors" :key="issue">{{ issue }}</li>
@@ -568,6 +563,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      <AppFooter />
     </template>
 
     <template v-else-if="status === 'lobby' && pin">
@@ -656,6 +652,7 @@ onUnmounted(() => {
   border: none;
   color: #888;
   font-size: 0.8rem;
+  line-height: 1.2;
   text-decoration: underline;
   min-height: 1rem;
 }
@@ -671,6 +668,7 @@ onUnmounted(() => {
   padding: 0.2rem 0.4rem;
   color: #888;
   font-size: 0.8rem;
+  line-height: 1.2;
 }
 .host-app__setup {
   display: grid;
@@ -711,17 +709,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.host-app__preview-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.host-app__source-link {
-  font-size: 0.8rem;
-  color: #888;
-  white-space: nowrap;
 }
 .host-app__preview-list {
   flex: 1;

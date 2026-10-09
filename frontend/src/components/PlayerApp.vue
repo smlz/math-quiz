@@ -14,6 +14,7 @@ import {
   savePlayerSession,
   type StoredPlayerSession,
 } from "../api/storedSession";
+import AppFooter from "./AppFooter.vue";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
@@ -238,7 +239,10 @@ onUnmounted(teardown);
 
 <template>
   <div class="player-app">
-    <PlayerJoin v-if="status === 'join'" :initial-pin="joinPin" :notice="joinNotice" @joined="onJoined" />
+    <template v-if="status === 'join'">
+      <PlayerJoin :initial-pin="joinPin" :notice="joinNotice" @joined="onJoined" />
+      <AppFooter compact class="player-app__footer" />
+    </template>
 
     <template v-else>
       <header class="player-app__header">
@@ -298,6 +302,12 @@ onUnmounted(teardown);
   display: flex;
   flex-direction: column;
   text-align: center;
+}
+/* Pinned to the bottom edge, like the host's footer. Doubled class to
+   outrank AppFooter's own margin regardless of stylesheet order. */
+.player-app__footer.player-app__footer {
+  margin-top: auto;
+  margin-bottom: -1rem;
 }
 .player-app__header {
   flex: 0 0 auto;

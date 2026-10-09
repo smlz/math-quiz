@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import type { Plugin } from 'vite'
@@ -43,6 +44,26 @@ function typstTsAssets() {
 }
 
 const typstTs = typstTsAssets()
+
+/**
+ * The commit being built, for the footer's source link (AGPL §13: the source
+ * offered must be the source that is running), plus its tag if it is a
+ * release. CI always has a checkout; a build outside any git repository just
+ * links to the repository itself.
+ */
+function sourceVersion(): { commit: string | null; tag: string | null } {
+  const git = (...args: string[]) => {
+    try {
+      return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    } catch {
+      return null
+    }
+  }
+  return {
+    commit: git('rev-parse', 'HEAD') ?? process.env.GITHUB_SHA ?? null,
+    tag: git('describe', '--tags', '--exact-match', 'HEAD'),
+  }
+}
 
 /**
  * Adds a Content-Security-Policy <meta> to the built index.html (GitHub Pages
@@ -96,6 +117,7 @@ export default defineConfig({
   plugins: [vue(), contentSecurityPolicy()],
   define: {
     __TYPST_TS__: JSON.stringify(typstTs),
+    __SOURCE_VERSION__: JSON.stringify(sourceVersion()),
   },
   server: {
     fs: {

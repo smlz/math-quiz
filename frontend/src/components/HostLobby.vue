@@ -72,6 +72,7 @@ watch(
   border: none;
   color: #888;
   font-size: 0.8rem;
+  line-height: 1.2;
   text-decoration: underline;
   min-height: 1rem;
 }

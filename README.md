@@ -16,13 +16,23 @@ itself is read off the host screen.
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
 described in [§3](SPEC.md#3-question-authoring).
 
-The app is designed for _simplicity_ and _privacy_. The whole game runs in the
-host's browser; the server only passes messages between host and players
-without inspecting them. The server stores nothing, and its access logs are
-deleted after one day.
+The app is designed for _simplicity_ and _privacy_ (see [Privacy](#privacy)).
 
 Even though carefully designed, this app is mostly vibe coded. Use at your own
 risk!
+
+## Privacy
+
+- There are no accounts. Players only choose a nickname, which the host
+  screen shows in the lobby and on the leaderboard.
+- The whole game runs in the host's browser; the server only passes messages
+  between host and players without inspecting them. The server stores
+  nothing, and its access logs are deleted after one day.
+- So that a reload or a dropped connection doesn't lose the game, the browser
+  keeps the current session (and the player's nickname) in `localStorage`.
+- The host page loads the Typst compiler, its fonts and packages from
+  jsDelivr and packages.typst.org. Player devices load nothing from third
+  parties.
 
 ## Architecture
 
