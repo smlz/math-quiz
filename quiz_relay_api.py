@@ -338,7 +338,16 @@ ALLOWED_ORIGINS = (
 with open(pathlib.Path(__file__).with_name("pyproject.toml"), "rb") as _pyproject:
     __version__ = tomllib.load(_pyproject)["project"]["version"]
 
-app = FastAPI(title="Quiz Relay API", version=__version__)
+# AGPL §13: users interacting with the relay over a network get a way to the
+# source. A modified deployment must point this at its own source.
+SOURCE_URL = "https://github.com/smlz/math-quiz"
+
+app = FastAPI(
+    title="Quiz Relay API",
+    version=__version__,
+    description=f"Source code: <{SOURCE_URL}>",
+    license_info={"name": "AGPL-3.0-or-later", "identifier": "AGPL-3.0-or-later"},
+)
 # Added before CORS so CORS wraps it and a 413 still reaches the browser.
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_BODY_BYTES)
 # No cookies or HTTP auth travel with a request -- identity is a token in a
@@ -355,7 +364,7 @@ router = APIRouter(prefix=API_PREFIX)
 
 @app.get("/")
 async def health():
-    return {"ok": True}
+    return {"ok": True, "source": SOURCE_URL}
 
 
 @router.post("/session", response_model=CreateSessionResponse)

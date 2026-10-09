@@ -1,7 +1,7 @@
 # Math Quiz
 
 [![Test](https://github.com/smlz/math-quiz/actions/workflows/test.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/test.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 A live quiz app for maths lessons. A **host** runs the game on a shared screen
 (projector); **players** join from their own devices with a 6-digit PIN or by
@@ -114,4 +114,4 @@ so no servers need to be running beforehand.
 
 ## License
 
-GPLv3 — see [LICENSE](LICENSE).
+AGPLv3 — see [LICENSE](LICENSE).

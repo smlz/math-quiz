@@ -2,7 +2,7 @@
 name = "math-quiz"
 version = "1.0.0"
 description = "Live math quiz relay backend"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.111",

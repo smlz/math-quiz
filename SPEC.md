@@ -447,7 +447,8 @@ PlayerMessage = (
 ## 7. API surface
 
 Seven endpoints, mounted under `/api/v1` on the relay deployment. None of them
-inspects a payload. A `GET /` health check sits outside the prefix.
+inspects a payload. A `GET /` health check sits outside the prefix; it also
+returns the source-code URL (`{"ok": true, "source": ...}`, AGPL §13).
 
 | Method | Path                                    | Who    | Auth header      | Purpose |
 |--------|-----------------------------------------|--------|------------------|---------|

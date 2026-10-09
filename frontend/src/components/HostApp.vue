@@ -29,6 +29,9 @@ import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
+// AGPL §13: users interacting with the app over a network get a way to the
+// source. A modified deployment must point this at its own source.
+const SOURCE_URL = "https://github.com/smlz/math-quiz";
 // Generous for one class, but bounds what a flood of joins from strangers who
 // guessed the pin can do to the roster, the projector and every snapshot.
 const MAX_PLAYERS = 200;
@@ -540,24 +543,29 @@ onUnmounted(() => {
         </div>
 
         <div class="host-app__preview">
-          <h2>Vorschau</h2>
-          <ul v-if="previewErrors.length" class="host-app__errors">
-            <li v-for="issue in previewErrors" :key="issue">{{ issue }}</li>
-          </ul>
-          <template v-else-if="previewQuiz">
-            <section
-              v-for="(question, i) in previewQuiz.questions"
-              :key="question.id"
-              class="host-app__preview-item"
-            >
-              <h3>Frage {{ i + 1 }} von {{ previewQuiz.questions.length }}</h3>
-              <ScreenFrame>
-                <div class="host-app__preview-screen">
-                  <QuestionCard :question="question" :reveal-correct="true" />
-                </div>
-              </ScreenFrame>
-            </section>
-          </template>
+          <div class="host-app__preview-header">
+            <h2>Vorschau</h2>
+            <a class="host-app__source-link" :href="SOURCE_URL" target="_blank" rel="noopener">Quellcode ↗</a>
+          </div>
+          <div class="host-app__preview-list">
+            <ul v-if="previewErrors.length" class="host-app__errors">
+              <li v-for="issue in previewErrors" :key="issue">{{ issue }}</li>
+            </ul>
+            <template v-else-if="previewQuiz">
+              <section
+                v-for="(question, i) in previewQuiz.questions"
+                :key="question.id"
+                class="host-app__preview-item"
+              >
+                <h3>Frage {{ i + 1 }} von {{ previewQuiz.questions.length }}</h3>
+                <ScreenFrame>
+                  <div class="host-app__preview-screen">
+                    <QuestionCard :question="question" :reveal-correct="true" />
+                  </div>
+                </ScreenFrame>
+              </section>
+            </template>
+          </div>
         </div>
       </div>
     </template>
@@ -700,6 +708,23 @@ onUnmounted(() => {
   margin-top: 0.75rem;
 }
 .host-app__preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.host-app__preview-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.host-app__source-link {
+  font-size: 0.8rem;
+  color: #888;
+  white-space: nowrap;
+}
+.host-app__preview-list {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
