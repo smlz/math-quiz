@@ -72,8 +72,8 @@ npm run dev
 ```
 
 Vite proxies `/api` to the backend, so open only the Vite URL in the browser.
-The host screen is at `/`, players join at `/join` (the lobby's QR code
-links there with the PIN prefilled).
+Players join at `/` (the lobby's QR code links there with the PIN
+prefilled), the host screen is at `/create`.
 
 ## Building
 

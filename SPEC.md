@@ -184,7 +184,7 @@ compiling it whole:
 
 ### 3.5 Loading a quiz file from a link
 
-Instead of pasting, the host page can be opened as `/?src=<source>`; the
+Instead of pasting, the host page can be opened as `/create?src=<source>`; the
 file is then fetched and put into the editor, where it is validated and
 started exactly like pasted text. A link only fills the editor on a fresh
 start — a session resumed after a reload (§4.3) keeps its own quiz.
@@ -213,13 +213,14 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
 
 1. **Lobby**: host creates a session → the relay mints a 6-digit numeric PIN
    and the host renders a QR code encoding a join URL
-   (`https://.../join?pin=123456` — a `404.html` redirect trick makes real
-   paths like this work on GitHub Pages, which has no server-side rewrites).
+   (`https://.../?pin=123456` — the player app is the site root, the host
+   page lives at `/create`; a `404.html` redirect trick makes real paths
+   like that one work on GitHub Pages, which has no server-side rewrites).
    Players join and choose a nickname, which reaches the host as an ordinary
    message; they appear in the host's lobby view, and see themselves
    confirmed in the next snapshot. Nicknames are stored in the client's
    localStorage and reused for later sessions: the join form comes prefilled,
-   but joining always takes a tap, so a `/join?pin=...` link alone can never
+   but joining always takes a tap, so a `/?pin=...` link alone can never
    hand a nickname to a session. The number of joined players is shown.
    The host can remove a player from the lobby or the in-game leaderboard,
    mainly for a rude nickname. The removed id is ignored for the rest of the
@@ -484,7 +485,7 @@ purges the whole map.
 
 ## 8. Frontend (Vue 3)
 
-- **Host view**: setup screen with textbox (start quiz button) -> PIN + QR
+- **Host view** (`/create`): setup screen with textbox (start quiz button) -> PIN + QR
   code display, live join list, question display (with Typst rendering, and
   no separate question-number label/heading; prompt and 2×2 answer grid
   sized per that question's `answer-area-fraction`, §3.2; per-option
@@ -497,8 +498,9 @@ purges the whole map.
  + counts shown, plus a **"Show
   leaderboard"** button to advance), leaderboard (**top 5 players only**,
   ranked by cumulative score), "Next" control.
-- **Player view**: join screen (PIN entry or QR scan → prefilled PIN),
-  nickname entry (first-time), then an answer UI of **exactly four plain
+- **Player view** (`/`, the site root): join screen (PIN entry or QR scan →
+  prefilled PIN), nickname entry (first-time) and a link to the host view,
+  hidden when the page was opened with a PIN (i.e. from the QR code); then an answer UI of **exactly four plain
   colored A/B/C/D buttons and nothing else** — no question prompt, no
   option text/math/figures are ever rendered on the player device (that
   content is read off the shared host screen, §4.1). The player's nickname

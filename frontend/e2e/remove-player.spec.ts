@@ -5,11 +5,11 @@ test("host removes a player, who can rejoin under a new name", async ({ browser 
   const pupil = await (await browser.newContext()).newPage();
   host.on("dialog", (dialog) => dialog.accept());
 
-  await host.goto("/");
+  await host.goto("/create");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = (await host.locator(".host-lobby__pin").textContent())!;
 
-  await pupil.goto(`/join?pin=${pin}`);
+  await pupil.goto(`/?pin=${pin}`);
   await pupil.getByLabel("Nickname").fill("Rude");
   await pupil.getByRole("button", { name: "Beitreten" }).click();
   await expect(pupil.getByRole("heading", { name: "Du bist dabei, Rude!" })).toBeVisible();

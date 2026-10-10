@@ -20,7 +20,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   const ada = await adaContext.newPage();
   const bo = await boContext.newPage();
 
-  await host.goto("/");
+  await host.goto("/create");
   await expect(host.getByRole("heading", { name: "Quiz-Quelltext (Typst)" })).toBeVisible();
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
 
@@ -31,7 +31,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
     [ada, "Ada"],
     [bo, "Bo"],
   ] as const) {
-    await page.goto(`/join?pin=${pin}`);
+    await page.goto(`/?pin=${pin}`);
     await page.getByLabel("Nickname").fill(nickname);
     await page.getByRole("button", { name: "Beitreten" }).click();
     await expect(page.getByRole("heading", { name: `Du bist dabei, ${nickname}!` })).toBeVisible();
@@ -109,11 +109,11 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   const host = await hostContext.newPage();
   const ada = await adaContext.newPage();
 
-  await host.goto("/");
+  await host.goto("/create");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = await host.locator(".host-lobby__pin").textContent();
 
-  await ada.goto(`/join?pin=${pin}`);
+  await ada.goto(`/?pin=${pin}`);
   await ada.getByLabel("Nickname").fill("Ada");
   await ada.getByRole("button", { name: "Beitreten" }).click();
   await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();

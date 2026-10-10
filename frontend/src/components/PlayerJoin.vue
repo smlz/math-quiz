@@ -18,6 +18,9 @@ const props = defineProps<{
 
 const params = new URLSearchParams(location.search);
 const pin = ref(params.get("pin") ?? props.initialPin ?? "");
+// The lobby's QR code carries the pin, so a link with one was opened by a
+// pupil mid-lesson, who has no use for the way to the host page.
+const showCreateLink = !params.has("pin");
 const storedNickname = loadNickname();
 const nickname = ref(storedNickname);
 const nicknameReadonly = ref(!!storedNickname);
@@ -70,7 +73,7 @@ async function join() {
 //
 // Anything else always waits for a tap, even with the pin and a nickname from
 // an earlier quiz already filled in: joining on load would let any
-// `/join?pin=...` link, from anyone, hand this device's nickname to whatever
+// `/?pin=...` link, from anyone, hand this device's nickname to whatever
 // session it names.
 onMounted(() => {
   const stored = pin.value ? loadPlayerSession(pin.value) : null;
@@ -100,6 +103,7 @@ onMounted(() => {
     </label>
     <p v-if="error" class="player-join__error">{{ error }}</p>
     <button type="submit" :disabled="joining">{{ joining ? "Trete bei…" : "Beitreten" }}</button>
+    <a v-if="showCreateLink" class="player-join__create" href="/create">Eigenes Quiz erstellen</a>
   </form>
 </template>
 
@@ -129,6 +133,10 @@ onMounted(() => {
 }
 .player-join__error {
   color: #b00020;
+}
+.player-join__create {
+  justify-self: center;
+  font-size: 0.9rem;
 }
 .player-join__reconnecting {
   margin: 3rem auto;

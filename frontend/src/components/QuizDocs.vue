@@ -111,7 +111,7 @@ onUnmounted(() => {
   URL.revokeObjectURL(starterUrl);
 });
 
-const EXAMPLE_LINK = `${location.origin}/?src=gh:smlz/math-quiz/typst/example-quiz.typ`;
+const EXAMPLE_LINK = `${location.origin}/create?src=gh:smlz/math-quiz/typst/example-quiz.typ`;
 
 const LINK_FORMS: { form: string; example: string }[] = [
   { form: "https://…", example: "https://example.com/quizze/mengen.typ" },
@@ -291,7 +291,7 @@ const ERRORS: { message: string; cause: string }[] = [
       <p>
         Danach in VS Code <code>mein-quiz.typ</code> öffnen und die Tinymist-Vorschau starten — oder im Terminal
         <code>typst watch mein-quiz.typ</code> laufen lassen. Zum Spielen den Inhalt der Datei kopieren und auf der
-        Startseite einfügen — oder die Datei online stellen und <a href="#link">per Link laden</a>.
+        Seite <a href="/create">Quiz erstellen</a> einfügen — oder die Datei online stellen und <a href="#link">per Link laden</a>.
       </p>
       <QuizDocExample
         :source="STARTER_QUIZ"
@@ -304,7 +304,7 @@ const ERRORS: { message: string; cause: string }[] = [
       <h2>Quiz per Link laden</h2>
       <p>
         Liegt die Quiz-Datei öffentlich im Netz, muss sie nicht jedes Mal kopiert werden: Hänge
-        <code>?src=</code> und die Adresse der Datei an die Adresse der Startseite. Beim Öffnen des Links wird die
+        <code>?src=</code> und die Adresse der Datei an die Adresse der Seite «Quiz erstellen». Beim Öffnen des Links wird die
         Datei geladen und erscheint im Textfeld, wo sie wie gewohnt geprüft und gestartet wird. Ein Beispiel:
       </p>
       <p>
@@ -418,7 +418,7 @@ const ERRORS: { message: string; cause: string }[] = [
     <section id="fehler">
       <h2>Häufige Fehler</h2>
       <p>
-        Die Vorschau auf dem Startbildschirm prüft laufend den Aufbau. Beim Klick auf «Quiz erstellen» wird
+        Die Vorschau auf der Seite «Quiz erstellen» prüft laufend den Aufbau. Beim Klick auf «Quiz erstellen» wird
         zusätzlich jeder einzelne Typst-Block wirklich kompiliert — erst wenn alles fehlerfrei ist, erscheint die
         Lobby mit dem QR-Code.
       </p>

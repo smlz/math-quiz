@@ -21,7 +21,7 @@ async function send(request: APIRequestContext, pin: string, token: string, payl
 test("a quiz cannot smuggle script into the rendered SVG", async ({ page }) => {
   // typst.ts carries a link's URL through verbatim, and the SVG is mounted
   // with v-html: a `?src=` quiz could otherwise plant a javascript: link.
-  await page.goto("/");
+  await page.goto("/create");
   await page.locator("textarea").fill(`#import "quiz.typ": *
 #show: quiz
 
@@ -49,7 +49,7 @@ test("a quiz cannot smuggle script into the rendered SVG", async ({ page }) => {
 });
 
 test("host ignores or trims hostile player messages", async ({ page: host, request }) => {
-  await host.goto("/");
+  await host.goto("/create");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = (await host.locator(".host-lobby__pin").textContent())!;
 
@@ -81,17 +81,17 @@ test("host ignores or trims hostile player messages", async ({ page: host, reque
 });
 
 test("a join link never joins without a tap", async ({ browser }) => {
-  // Anyone can send a pupil a /join?pin=... link; with a nickname remembered
+  // Anyone can send a pupil a /?pin=... link; with a nickname remembered
   // from an earlier quiz, opening it must not hand that name to the session.
   const host = await (await browser.newContext()).newPage();
   const player = await (await browser.newContext()).newPage();
-  await host.goto("/");
+  await host.goto("/create");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = await host.locator(".host-lobby__pin").textContent();
 
-  await player.goto("/join");
+  await player.goto("/");
   await player.evaluate(() => localStorage.setItem("math-quiz-nickname", "Ada"));
-  await player.goto(`/join?pin=${pin}`);
+  await player.goto(`/?pin=${pin}`);
   await expect(player.getByLabel("Nickname")).toHaveValue("Ada");
   await player.waitForTimeout(3000);
   await expect(host.locator(".host-lobby__count")).toHaveText("0 Spieler:innen beigetreten");

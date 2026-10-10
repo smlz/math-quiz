@@ -9,7 +9,7 @@ test("host explains that no pin is free when the relay answers 503", async ({ pa
       ? route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"No free pin"}' })
       : route.continue(),
   );
-  await page.goto("/");
+  await page.goto("/create");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
 
   await expect(page.locator(".host-app__errors")).toContainText("Gerade sind alle Spiel-PINs vergeben");
@@ -20,7 +20,7 @@ test("host explains that the relay is unreachable", async ({ page }) => {
   await page.route("**/api/v1/session", (route) =>
     route.request().method() === "POST" ? route.abort("connectionrefused") : route.continue(),
   );
-  await page.goto("/");
+  await page.goto("/create");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
 
   await expect(page.locator(".host-app__errors")).toContainText("Server nicht erreichbar");
