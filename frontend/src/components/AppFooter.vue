@@ -28,7 +28,9 @@ const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
         </a>
       </li>
       <li><a :href="`${SOURCE_URL}/blob/main/LICENSE`" target="_blank" rel="noopener">AGPL-3.0</a></li>
-      <li><a :href="`${SOURCE_URL}/blob/main/README.md#privacy`" target="_blank" rel="noopener">Datenschutz</a></li>
+      <li>
+        <a href="/about" target="_blank" rel="noopener">Datenschutz<template v-if="!compact"> &amp; Grenzen</template></a>
+      </li>
       <template v-if="!compact">
         <li><a :href="`${SOURCE_URL}/issues`" target="_blank" rel="noopener">Feedback</a></li>
         <li>

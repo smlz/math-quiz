@@ -530,6 +530,12 @@ purges the whole map.
   alongside their own correct/incorrect text and points earned above the
   grid. Per-option answer counts remain **host-only**, never shown to
   players (§4.1).
+- **About page** (`/about`): what happens to the data and what the app can't
+  do, in plain German for teachers, pupils and parents. The footer of the
+  join and setup screens links to it. It is static text and loads nothing
+  from third parties — unlike `/docs`, which compiles its examples with
+  typst.ts — so that a player following the privacy link doesn't break the
+  promise it describes.
 - **Answer button layout** (both host and player screens): always exactly
   4 buttons arranged in a fixed **2×2 grid**, always labeled **A**
   (top-left), **B** (top-right), **C** (bottom-left), **D** (bottom-right).

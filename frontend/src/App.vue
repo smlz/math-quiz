@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import HostApp from './components/HostApp.vue'
 import PlayerApp from './components/PlayerApp.vue'
+import QuizAbout from './components/QuizAbout.vue'
 import QuizDocs from './components/QuizDocs.vue'
 
 // No router dependency for v1: players join at "/" (the lobby's QR code adds
@@ -11,10 +12,12 @@ import QuizDocs from './components/QuizDocs.vue'
 const route = location.pathname
 const isHostRoute = route.startsWith('/create')
 const isDocsRoute = route.startsWith('/docs')
+const isAboutRoute = route.startsWith('/about')
 </script>
 
 <template>
   <HostApp v-if="isHostRoute" />
   <QuizDocs v-else-if="isDocsRoute" />
+  <QuizAbout v-else-if="isAboutRoute" />
   <PlayerApp v-else />
 </template>

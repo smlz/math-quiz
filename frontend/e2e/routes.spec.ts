@@ -16,3 +16,22 @@ test("a join link from the QR code hides the way to the host page", async ({ pag
   await expect(page.getByLabel("Spiel-PIN")).toHaveValue("123456");
   await expect(page.getByRole("link", { name: "Eigenes Quiz erstellen" })).toHaveCount(0);
 });
+
+test("the players' privacy link stays on the site and loads nothing from third parties", async ({ page, context }) => {
+  await page.goto("/?pin=123456");
+  const origin = new URL(page.url()).origin;
+
+  const [about] = await Promise.all([
+    context.waitForEvent("page"),
+    page.getByRole("link", { name: "Datenschutz" }).click(),
+  ]);
+  const foreign: string[] = [];
+  about.on("request", (request) => {
+    if (new URL(request.url()).origin !== origin) foreign.push(request.url());
+  });
+  await about.reload({ waitUntil: "networkidle" });
+
+  await expect(about).toHaveURL("/about");
+  await expect(about.getByRole("heading", { name: "Datenschutz & Grenzen" })).toBeVisible();
+  expect(foreign).toEqual([]);
+});

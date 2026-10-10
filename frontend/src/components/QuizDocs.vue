@@ -204,6 +204,10 @@ const ERRORS: { message: string; cause: string }[] = [
         Kompilierst du die Datei, erhältst du pro Frage eine 16:9-Seite mit hervorgehobener richtiger Antwort — genau
         so, wie sie später auf dem Beamer aussieht.
       </p>
+      <p class="quiz-docs__lead quiz-docs__note">
+        Was mit den Daten geschieht und was die App nicht kann, steht unter
+        <a href="/about">Datenschutz &amp; Grenzen</a>.
+      </p>
     </header>
 
     <nav class="quiz-docs__toc">
