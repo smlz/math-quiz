@@ -259,7 +259,11 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    derived from their position in that list. Players tied on score share the
    same rank on the host screen (standard competition ranking: two players
    tied for 1st are both shown as "1.", and the next distinct score is
-   ranked 3rd, not 2nd).
+   ranked 3rd, not 2nd). The host screen first shows the standings from
+   before the question and then animates them into the new ones: the points
+   won appear next to each score, which counts up, and the rows then move to
+   their new places, marked with the ranks gained or lost. The final
+   leaderboard is revealed the same way.
 5. Host clicks "Next" to loop back to step 2, or "Finish" after the last
    question to show the final leaderboard and end the session.
 

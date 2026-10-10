@@ -93,6 +93,10 @@ const connection = ref<ConnectionStatus>("open");
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
+// The scores as they stood before the current question was revealed, so the
+// leaderboard can show what the question changed. Not persisted: after a
+// reload the leaderboard simply appears in its final state.
+const scoresBeforeReveal = ref<Map<string, number> | null>(null);
 // Players the teacher removed (e.g. for a rude nickname). Their ids are
 // ignored for the rest of the session; rejoining takes a fresh id.
 const removed = reactive(new Set<string>());
@@ -139,9 +143,9 @@ const questionProgress = computed(() =>
     : "",
 );
 
-const standings = computed<LeaderboardEntry[]>(() => {
+function rankPlayers(scoreByPlayer: Map<string, number>): LeaderboardEntry[] {
   const sorted = [...roster.entries()]
-    .map(([player_id, nickname]) => ({ player_id, nickname, score: scores.get(player_id) ?? 0 }))
+    .map(([player_id, nickname]) => ({ player_id, nickname, score: scoreByPlayer.get(player_id) ?? 0 }))
     .sort((a, b) => b.score - a.score);
   // Standard competition ranking: ties share a rank, next rank skips ahead.
   let rank = 0;
@@ -149,7 +153,10 @@ const standings = computed<LeaderboardEntry[]>(() => {
     if (i === 0 || entry.score !== sorted[i - 1].score) rank = i + 1;
     return { ...entry, rank };
   });
-});
+}
+
+const standings = computed(() => rankPlayers(scores));
+const previousStandings = computed(() => scoresBeforeReveal.value && rankPlayers(scoresBeforeReveal.value));
 
 // Structural parsing alone doesn't catch a Typst syntax/compile error inside
 // a prompt or option body - actually compiling every snippet here is the
@@ -433,6 +440,7 @@ async function reveal() {
     .filter(([, optionIndex]) => optionIndex === q.correctIndex)
     .map(([playerId]) => playerId);
 
+  scoresBeforeReveal.value = new Map(scores);
   for (const playerId of roster.keys()) {
     const points = pointsForReveal(correctOrder.value, playerId);
     scores.set(playerId, (scores.get(playerId) ?? 0) + points);
@@ -502,6 +510,7 @@ function resetToSetup() {
   correctOrder.value = [];
   roster.clear();
   scores.clear();
+  scoresBeforeReveal.value = null;
   answers.clear();
   removed.clear();
 }
@@ -622,7 +631,7 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :finished="false"/>
+        <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="false" />
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
@@ -633,7 +642,7 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'finished'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :finished="true" />
+        <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="true" />
       </div>
       <div class="host-app__footer">
         <button type="button" class="host-app__end" @click="resetToSetup">Neues Quiz erstellen</button>

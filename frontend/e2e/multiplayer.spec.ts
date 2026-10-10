@@ -103,6 +103,55 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await boContext.close();
 });
 
+test("the leaderboard animates from the old standings into the new ones", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const adaContext = await browser.newContext();
+  const boContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const ada = await adaContext.newPage();
+  const bo = await boContext.newPage();
+
+  await host.goto("/create");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = await host.locator(".host-lobby__pin").textContent();
+
+  // Ada joins first, so with everyone on 0 points she is listed above Bo.
+  for (const [page, nickname] of [
+    [ada, "Ada"],
+    [bo, "Bo"],
+  ] as const) {
+    await page.goto(`/?pin=${pin}`);
+    await page.getByLabel("Nickname").fill(nickname);
+    await page.getByRole("button", { name: "Beitreten" }).click();
+    await expect(page.getByRole("heading", { name: `Du bist dabei, ${nickname}!` })).toBeVisible();
+  }
+  await expect(host.locator(".host-lobby__count")).toHaveText("2 Spieler:innen beigetreten");
+  await host.getByRole("button", { name: "Frage starten" }).click();
+
+  // Only Bo picks the correct option (C) and overtakes Ada.
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  await answerOption(ada, 0);
+  await answerOption(bo, 2);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+
+  // The points won are shown while the score counts up ...
+  await expect(host.locator(".leaderboard__gain")).toHaveText("+12");
+
+  // ... and are gone again once the rows have settled in their new order.
+  const rows = host.locator(".leaderboard__row");
+  await expect(rows.first()).toContainText("Bo");
+  await expect(rows.first().locator(".leaderboard__score")).toHaveText("12");
+  await expect(rows.nth(1)).toContainText("Ada");
+  await expect(rows.nth(1).locator(".leaderboard__rank")).toHaveText("2");
+  await expect(rows.nth(1).locator(".leaderboard__trend")).toHaveText("▼1");
+  await expect(host.locator(".leaderboard__gain")).toHaveCount(0);
+
+  await hostContext.close();
+  await adaContext.close();
+  await boContext.close();
+});
+
 test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const adaContext = await browser.newContext();
