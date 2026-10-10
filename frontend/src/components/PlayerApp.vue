@@ -6,6 +6,7 @@ import {
   subscribeToState,
   STALE_AFTER_MS,
   type ConnectionStatus,
+  type PlayerMessage,
   type SessionSnapshot,
 } from "../api/quizClient";
 import {
@@ -21,9 +22,15 @@ import PlayerQuestion from "./PlayerQuestion.vue";
 
 type Status = "join" | "lobby" | "question" | "reveal" | "leaderboard" | "finished";
 
-/** How often an unconfirmed message is re-sent until a snapshot shows it
- * landed. This is the whole of the delivery guarantee. */
+/** How long a sent message may stay unconfirmed before it is sent again,
+ * until a snapshot shows it landed. This is the whole of the delivery
+ * guarantee. */
 const RETRY_MS = 2000;
+/** How often `tick` checks. Finer than RETRY_MS so that a re-send follows the
+ * send it repeats by about RETRY_MS, whenever that happened: the host confirms
+ * a burst of messages with one snapshot up to half a second later, and a
+ * re-send that fires before then is wasted. */
+const TICK_MS = 500;
 
 const status = ref<Status>("join");
 const connection = ref<ConnectionStatus>("open");
@@ -52,6 +59,9 @@ let scoredQuestionIndex = -1;
 let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
 let lastSnapshotAt = 0;
+// Per kind of message: a join and an answer can be unconfirmed at the same
+// time, and waiting for one must not hold back the other.
+const lastSentAt: Record<PlayerMessage["type"], number> = { join: 0, answer: 0 };
 
 // Non-gameplay states (no answer grid) get their content vertically centered,
 // except leaderboard, which aligns to the top (bottom stays reserved/empty,
@@ -134,30 +144,40 @@ function persist() {
   });
 }
 
-/** Re-sends whatever the host has not confirmed yet, and notices when
+/** Every message goes out through here, so `tick` knows how long the host has
+ * had to confirm the latest one of its kind. */
+function send(message: PlayerMessage) {
+  lastSentAt[message.type] = Date.now();
+  return sendMessage(pin.value!, playerToken.value!, message);
+}
+
+/** Re-sends whatever the host has not confirmed in time, and notices when
  * snapshots stop arriving. */
 function tick() {
   if (!pin.value || !playerToken.value) return;
+  const now = Date.now();
 
-  if (!joinAcknowledged.value && nickname.value) {
-    void sendMessage(pin.value, playerToken.value, {
-      type: "join",
-      nickname: nickname.value,
-    }).catch(() => {});
-  } else if (
+  // The two are independent: during a question a snapshot only lists who has
+  // answered, so a join made (or repeated after a reload) in that phase stays
+  // unconfirmed until the answer itself lands.
+  if (!joinAcknowledged.value && nickname.value && now - lastSentAt.join >= RETRY_MS) {
+    void send({ type: "join", nickname: nickname.value }).catch(() => {});
+  }
+  if (
     status.value === "question" &&
     selectedIndex.value !== null &&
     !answerAcknowledged.value &&
-    currentQuestionIndex.value !== null
+    currentQuestionIndex.value !== null &&
+    now - lastSentAt.answer >= RETRY_MS
   ) {
-    void sendMessage(pin.value, playerToken.value, {
+    void send({
       type: "answer",
       question_index: currentQuestionIndex.value,
       option_index: selectedIndex.value,
     }).catch(() => {});
   }
 
-  if (Date.now() - lastSnapshotAt > STALE_AFTER_MS) connection.value = "reconnecting";
+  if (now - lastSnapshotAt > STALE_AFTER_MS) connection.value = "reconnecting";
 }
 
 function teardown() {
@@ -213,7 +233,9 @@ function onJoined(session: StoredPlayerSession) {
   unsubscribe = subscribeToState(session.pin, handleSnapshot, (state) => {
     connection.value = state;
   });
-  retryTimer = window.setInterval(tick, RETRY_MS);
+  retryTimer = window.setInterval(tick, TICK_MS);
+  // Nothing has been sent under this identity yet, so the join goes out now.
+  lastSentAt.join = lastSentAt.answer = 0;
   tick();
 }
 
@@ -224,7 +246,7 @@ async function answer(optionIndex: number) {
   answeredQuestionIndex.value = currentQuestionIndex.value;
   persist();
   try {
-    await sendMessage(pin.value, playerToken.value, {
+    await send({
       type: "answer",
       question_index: currentQuestionIndex.value,
       option_index: optionIndex,

@@ -33,6 +33,10 @@ const PREVIEW_DEBOUNCE_MS = 300;
 // Generous for one class, but bounds what a flood of joins from strangers who
 // guessed the pin can do to the roster, the projector and every snapshot.
 const MAX_PLAYERS = 200;
+// Player messages arrive in bursts (a class joining, everyone answering), and
+// each snapshot goes out to every player: one per message would be quadratic.
+// All messages within this window are confirmed by a single snapshot instead.
+const BROADCAST_THROTTLE_MS = 500;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -103,6 +107,7 @@ const correctOrder = ref<string[]>([]);
 
 let unsubscribe: (() => void) | null = null;
 let heartbeat: number | null = null;
+let pendingBroadcast: number | null = null;
 
 const lobbyPlayers = computed(() => [...roster].map(([player_id, nickname]) => ({ player_id, nickname })));
 
@@ -250,6 +255,8 @@ function buildSnapshot(): SessionSnapshot {
  * the repetition is what lets a player who missed something catch up without
  * the relay having to remember anything. */
 async function broadcast() {
+  // Whatever a scheduled broadcast was going to confirm is in this one.
+  cancelPendingBroadcast();
   if (!pin.value || !hostToken.value || status.value === "setup") return;
   try {
     await publishState(pin.value, hostToken.value, buildSnapshot());
@@ -258,6 +265,20 @@ async function broadcast() {
     console.warn("Snapshot broadcast failed", e);
     connection.value = "reconnecting";
   }
+}
+
+/** Broadcasts within BROADCAST_THROTTLE_MS, together with whatever else
+ * changes until then. The first message of a burst starts the clock and the
+ * later ones ride along, so no sender waits longer than the window. */
+function scheduleBroadcast() {
+  if (pendingBroadcast !== null) return;
+  pendingBroadcast = window.setTimeout(() => void broadcast(), BROADCAST_THROTTLE_MS);
+}
+
+function cancelPendingBroadcast() {
+  if (pendingBroadcast === null) return;
+  clearTimeout(pendingBroadcast);
+  pendingBroadcast = null;
 }
 
 /** Anyone who knows (or guesses) the pin can mint a player token and send
@@ -286,9 +307,9 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
   } else {
     return;
   }
-  // Answer immediately rather than at the next heartbeat, so the sender sees
-  // its own message land without a visible delay.
-  void broadcast();
+  // Confirm well before the next heartbeat -- and before the sender's retry
+  // timer runs out -- so it sees its own message land without re-sending.
+  scheduleBroadcast();
 }
 
 function connect(sessionPin: string, token: string) {
@@ -301,6 +322,7 @@ function connect(sessionPin: string, token: string) {
 function disconnect() {
   unsubscribe?.();
   unsubscribe = null;
+  cancelPendingBroadcast();
   if (heartbeat !== null) {
     clearInterval(heartbeat);
     heartbeat = null;
@@ -491,7 +513,9 @@ async function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
   if (!window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
   // Tells connected players the session is over so they leave their current
-  // screen too, rather than just going silent on them.
+  // screen too, rather than just going silent on them. A snapshot still
+  // scheduled must not follow it and bring the session back.
+  cancelPendingBroadcast();
   await publishState(pin.value, hostToken.value, { phase: "finished", question_index: null, players: [] });
   clearHostSession();
   try {

@@ -167,3 +167,45 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await hostContext.close();
   await adaContext.close();
 });
+
+test("a lost answer is re-sent while the join is still unconfirmed", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const adaContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const ada = await adaContext.newPage();
+
+  await host.goto("/create");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = await host.locator(".host-lobby__pin").textContent();
+
+  await ada.goto(`/?pin=${pin}`);
+  await ada.getByLabel("Nickname").fill("Ada");
+  await ada.getByRole("button", { name: "Beitreten" }).click();
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  // A question snapshot lists only who has answered, so after this reload
+  // nothing confirms Ada's join until her answer lands -- she keeps
+  // re-sending it, and that must not stand in the way of the answer.
+  await ada.reload();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  let dropped = false;
+  await ada.route("**/session/*/message", async (route) => {
+    if (!dropped && route.request().postDataJSON()?.type === "answer") {
+      dropped = true;
+      await route.abort();
+    } else {
+      await route.continue();
+    }
+  });
+
+  await answerOption(ada, 2);
+  await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
+  expect(dropped).toBe(true);
+
+  await hostContext.close();
+  await adaContext.close();
+});

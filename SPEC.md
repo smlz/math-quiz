@@ -316,10 +316,17 @@ relay durable, **reliability comes from idempotent state transfer**:
   seconds regardless**. A player that missed something catches up on the
   next heartbeat; nothing has to be replayed, so there is no replay log and
   no `Last-Event-ID` handling anywhere.
-- A player re-sends a message every 2 seconds until it **observes its own
-  effect** in a snapshot — its id appearing in the roster after a `join`, or
-  in the answered list after an `answer`. The host dedupes by `player_id`.
-  This is at-least-once delivery with the host as the durable store.
+- Changes the host makes itself go out at once. Changes caused by player
+  messages are **throttled**: the first message starts a 0.5 s window and one
+  snapshot confirms everything that arrived within it. A snapshot goes to
+  every player, so one per message would cost N² deliveries when N players
+  join or answer together.
+- A player re-sends a message 2 seconds after it last sent it, until it
+  **observes its own effect** in a snapshot — its id appearing in the roster
+  after a `join`, or in the answered list after an `answer`. The host dedupes
+  by `player_id`. This is at-least-once delivery with the host as the durable
+  store. The 2 seconds count from the send, so that the throttle window plus
+  a round trip fit comfortably inside them.
 - A dropped message therefore costs at most one heartbeat of latency, never
   correctness.
 
