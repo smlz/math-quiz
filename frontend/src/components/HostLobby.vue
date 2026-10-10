@@ -29,7 +29,9 @@ watch(
   <section class="host-lobby">
     <h2>Beitreten auf <a :href="joinBase">{{ joinBase }}</a></h2>
     <p class="host-lobby__pin">{{ pin }}</p>
-    <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
+    <a :href="joinUrl" target="_blank" rel="noopener noreferrer">
+      <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
+    </a>
     <p class="host-lobby__count">{{ players.length }} Spieler:innen beigetreten</p>
     <ul class="host-lobby__roster">
       <li v-for="player in players" :key="player.player_id">
