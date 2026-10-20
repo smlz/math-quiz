@@ -30,7 +30,7 @@ const soundCreditsHref = `${SOURCE_URL}/blob/${ref ?? "main"}/frontend/public/au
           Quellcode<template v-if="versionLabel && !compact"> ({{ versionLabel }})</template>
         </a>
       </li>
-      <li><a :href="`${SOURCE_URL}/blob/main/LICENSE`" target="_blank" rel="noopener">AGPL-3.0</a></li>
+      <li><a :href="`${SOURCE_URL}/blob/main/LICENSE`" target="_blank" rel="noopener">Lizenz</a></li>
       <li>
         <a href="/about" target="_blank" rel="noopener">Datenschutz<template v-if="!compact"> &amp; Grenzen</template></a>
       </li>
