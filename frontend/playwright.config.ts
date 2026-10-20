@@ -14,7 +14,10 @@ export default defineConfig({
   timeout: 240_000,
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  // Once on CI, where a browser engine occasionally crashes outright (WebKit:
+  // "internal error"). A test that only passes on its retry is still listed
+  // as flaky in the report.
+  retries: process.env.CI ? 1 : 0,
   // The summary reporter only writes on GitHub Actions (job summary page).
   reporter: [["list"], ["./e2e/github-summary-reporter.ts"]],
   expect: {
