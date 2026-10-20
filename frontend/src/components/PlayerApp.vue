@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import {
   pointsForReveal,
   rankForScore,
@@ -16,7 +16,9 @@ import {
   savePlayerSession,
   type StoredPlayerSession,
 } from "../api/storedSession";
+import { addDebugSecret, debugLog, setDebugContext, startDebugLog } from "../debug/debugLog";
 import AppFooter from "./AppFooter.vue";
+import DebugExport from "./DebugExport.vue";
 import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
@@ -32,6 +34,8 @@ const RETRY_MS = 2000;
  * a burst of messages with one snapshot up to half a second later, and a
  * re-send that fires before then is wasted. */
 const TICK_MS = 500;
+
+startDebugLog("player");
 
 const status = ref<Status>("join");
 const connection = ref<ConnectionStatus>("open");
@@ -60,6 +64,18 @@ let lastSnapshotAt = 0;
 // time, and waiting for one must not hold back the other.
 const lastSentAt: Record<PlayerMessage["type"], number> = { join: 0, answer: 0 };
 
+watch(connection, (state) => debugLog(state === "open" ? "banner hidden" : "banner shown"));
+watch(joinAcknowledged, (acked) => {
+  if (acked) debugLog("join confirmed", { after: sinceSent("join") });
+});
+watch(answerAcknowledged, (acked) => {
+  if (acked) debugLog("answer confirmed", { q: currentQuestionIndex.value, after: sinceSent("answer") });
+});
+
+function sinceSent(kind: PlayerMessage["type"]): string {
+  return lastSentAt[kind] ? `${Date.now() - lastSentAt[kind]}ms` : "-";
+}
+
 // Non-gameplay states (no answer grid) get their content vertically centered,
 // except leaderboard, which aligns to the top (bottom stays reserved/empty,
 // matching the host's button-anchored-to-bottom layout).
@@ -75,10 +91,19 @@ function handleSnapshot(snapshot: SessionSnapshot) {
   const me = playerId.value;
   if (!me) return;
   if (snapshot.removed?.includes(me)) {
+    debugLog("removed by host");
     leaveAfterRemoval();
     return;
   }
   const listed = snapshot.players.includes(me);
+  // Identical repeats (heartbeats) collapse into one line with a count.
+  debugLog("snapshot", {
+    phase: snapshot.phase,
+    q: snapshot.question_index,
+    listed,
+    players: snapshot.players.length,
+    ...(snapshot.scores ? { score: snapshot.scores[me] ?? "-" } : {}),
+  });
 
   if (snapshot.phase === "question" && snapshot.question_index !== currentQuestionIndex.value) {
     currentQuestionIndex.value = snapshot.question_index;
@@ -116,6 +141,7 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       if (snapshot.phase === "finished") {
         // The quiz is over, so the reconnect credential has no further use.
         if (pin.value) clearPlayerSession(pin.value);
+        debugLog("quiz over", { score: myScore.value, rank: myRank.value });
         teardown();
       }
       break;
@@ -150,7 +176,8 @@ function persist() {
 
 /** Every message goes out through here, so `tick` knows how long the host has
  * had to confirm the latest one of its kind. */
-function send(message: PlayerMessage) {
+function send(message: PlayerMessage, retry = false) {
+  debugLog(retry ? "resend" : "send", { ...message });
   lastSentAt[message.type] = Date.now();
   return sendMessage(pin.value!, playerToken.value!, message);
 }
@@ -165,7 +192,7 @@ function tick() {
   // answered, so a join made (or repeated after a reload) in that phase stays
   // unconfirmed until the answer itself lands.
   if (!joinAcknowledged.value && nickname.value && now - lastSentAt.join >= RETRY_MS) {
-    void send({ type: "join", nickname: nickname.value }).catch(() => {});
+    void send({ type: "join", nickname: nickname.value }, lastSentAt.join > 0).catch(() => {});
   }
   if (
     status.value === "question" &&
@@ -174,14 +201,20 @@ function tick() {
     currentQuestionIndex.value !== null &&
     now - lastSentAt.answer >= RETRY_MS
   ) {
-    void send({
-      type: "answer",
-      question_index: currentQuestionIndex.value,
-      option_index: selectedIndex.value,
-    }).catch(() => {});
+    void send(
+      {
+        type: "answer",
+        question_index: currentQuestionIndex.value,
+        option_index: selectedIndex.value,
+      },
+      true,
+    ).catch(() => {});
   }
 
-  if (now - lastSnapshotAt > STALE_AFTER_MS) connection.value = "reconnecting";
+  if (now - lastSnapshotAt > STALE_AFTER_MS && connection.value === "open") {
+    debugLog("no snapshot", { for: `${now - lastSnapshotAt}ms` });
+    connection.value = "reconnecting";
+  }
 }
 
 function teardown() {
@@ -219,6 +252,14 @@ function leaveAfterRemoval() {
 }
 
 function onJoined(session: StoredPlayerSession) {
+  addDebugSecret(session.playerToken);
+  setDebugContext({ pin: session.pin, player: session.playerId, nickname: session.nickname });
+  debugLog("session", {
+    pin: session.pin,
+    player: session.playerId,
+    answered: session.answeredQuestionIndex,
+    selected: session.selectedIndex,
+  });
   joinNotice.value = undefined;
   pin.value = session.pin;
   playerId.value = session.playerId;
@@ -310,6 +351,7 @@ onUnmounted(teardown);
         <div v-else-if="status === 'finished'" class="player-app__panel">
           <h2>Quiz beendet!</h2>
           <p v-if="myRank">Du hast auf Platz {{ myRank }} mit {{ myScore }} Punkten abgeschlossen</p>
+          <DebugExport role="player" class="player-app__debug" />
         </div>
       </main>
     </template>
@@ -377,6 +419,9 @@ onUnmounted(teardown);
 }
 .player-app__reveal-wrong {
   color: #c00000;
+}
+.player-app__debug {
+  margin-top: 2rem;
 }
 .player-app__total-score {
   margin: 0 0 0.75rem;

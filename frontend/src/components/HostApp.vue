@@ -17,6 +17,7 @@ import {
   type SessionSnapshot,
 } from "../api/quizClient";
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
+import { addDebugSecret, debugLog, describeError, setDebugContext, startDebugLog } from "../debug/debugLog";
 import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { cleanNickname } from "../quiz/nickname";
@@ -26,6 +27,7 @@ import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
 import { renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
 import AppFooter from "./AppFooter.vue";
+import DebugExport from "./DebugExport.vue";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
@@ -46,6 +48,8 @@ const BROADCAST_RETRY_MS = 1000;
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
 type Status = "setup" | Phase;
+
+startDebugLog("host");
 
 // A `?src=` link (SPEC.md §3.5) replaces the sample quiz; the editor starts
 // empty rather than briefly showing the sample while the file loads.
@@ -212,6 +216,7 @@ async function loadAndCreateSession() {
   } catch (e) {
     quiz.value = null;
     loadErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
+    debugLog("quiz rejected", { issues: loadErrors.value.length, first: loadErrors.value[0] });
     return;
   }
 
@@ -221,6 +226,7 @@ async function loadAndCreateSession() {
   if (typstErrors.length) {
     quiz.value = null;
     loadErrors.value = typstErrors;
+    debugLog("quiz does not compile", { issues: typstErrors.length, first: typstErrors[0] });
     return;
   }
 
@@ -230,8 +236,11 @@ async function loadAndCreateSession() {
   } catch (e) {
     quiz.value = null;
     loadErrors.value = [createSessionErrorMessage(e)];
+    debugLog("session not created", { error: describeError(e) });
     return;
   }
+  addDebugSecret(created.hostToken);
+  debugLog("session created", { pin: created.pin, questions: quiz.value.questions.length });
   pin.value = created.pin;
   hostToken.value = created.hostToken;
 
@@ -280,8 +289,11 @@ async function broadcast() {
   // Whatever a scheduled broadcast was going to confirm is in this one.
   cancelPendingBroadcast();
   if (!pin.value || !hostToken.value || status.value === "setup") return;
+  const snapshot = buildSnapshot();
   try {
-    await publishState(pin.value, hostToken.value, buildSnapshot());
+    await publishState(pin.value, hostToken.value, snapshot);
+    // Repeats collapse into one line, so an unchanged heartbeat costs nothing.
+    debugLog("broadcast", { phase: snapshot.phase, q: snapshot.question_index, players: snapshot.players.length });
     reportBroadcast("open");
   } catch (e) {
     console.warn("Snapshot broadcast failed", e);
@@ -308,32 +320,69 @@ function cancelPendingBroadcast() {
  * any JSON object at all, so the payload is untrusted input: only the
  * relay-attributed `player_id` can be relied on. */
 function handleMessage({ player_id, payload }: IncomingMessage) {
-  if (removed.has(player_id)) return;
+  // Whatever is ignored is logged with the reason: that is what answers "my
+  // answer didn't count".
+  const ignore = (reason: string) => debugLog(`${String(payload?.type)} ignored`, { player: player_id, reason });
+  if (removed.has(player_id)) return ignore("removed");
   if (payload.type === "join") {
     // The first join wins: retries, and renames from an id already seen, are
     // ignored -- a real player always re-sends the nickname it joined with.
-    if (roster.has(player_id) || roster.size >= MAX_PLAYERS) return;
-    if (typeof payload.nickname !== "string") return;
+    // Not logged: during a question a player's join stays unconfirmed, and
+    // is repeated every few seconds, until its answer lands (see PlayerApp).
+    if (roster.has(player_id)) return;
+    if (roster.size >= MAX_PLAYERS) return ignore("roster full");
+    if (typeof payload.nickname !== "string") return ignore("no nickname");
     const nickname = cleanNickname(payload.nickname, roster.values());
-    if (!nickname) return;
+    if (!nickname) return ignore("unusable nickname");
     roster.set(player_id, nickname);
     if (!scores.has(player_id)) scores.set(player_id, 0);
+    debugLog("join", { player: player_id, nickname });
   } else if (payload.type === "answer") {
-    if (status.value !== "question" || !currentQuestion.value) return;
-    if (payload.question_index !== currentQuestionIndex.value) return;
+    if (status.value !== "question" || !currentQuestion.value) return ignore(`phase ${status.value}`);
+    if (payload.question_index !== currentQuestionIndex.value) {
+      return ignore(`for question ${payload.question_index}, now ${currentQuestionIndex.value}`);
+    }
     // Unknown senders are ignored: anyone who knows the pin can mint a token,
     // but only players the host has seen join can score.
-    if (!roster.has(player_id) || answers.has(player_id)) return;
+    if (!roster.has(player_id)) return ignore("not joined");
+    if (answers.has(player_id)) return ignore("already answered");
     const optionIndex = payload.option_index;
-    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= currentQuestion.value.options.length) return;
+    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= currentQuestion.value.options.length) {
+      return ignore("invalid option");
+    }
     answers.set(player_id, optionIndex);
+    debugLog("answer", { player: player_id, q: currentQuestionIndex.value, option: optionIndex, nth: answers.size });
   } else {
-    return;
+    return ignore("unknown type");
   }
   // Confirm well before the next heartbeat -- and before the sender's retry
   // timer runs out -- so it sees its own message land without re-sending.
   scheduleBroadcast();
 }
+
+// The banner, not the raw stream events: those are logged by quizClient.
+watch(connection, (state) =>
+  debugLog(state === "open" ? "banner hidden" : "banner shown", {
+    inbox: inboxConnection.value,
+    broadcast: broadcastConnection.value,
+  }),
+);
+
+// Who is who, for matching a pupil's log to this one. Kept in full rather than
+// left to the "join" lines, which a long quiz may push out of the log.
+watch(
+  () => [pin.value, status.value, currentQuestionIndex.value, [...roster], [...scores], [...removed]],
+  () =>
+    setDebugContext({
+      pin: pin.value,
+      phase: status.value,
+      question: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
+      questions: quiz.value?.questions.length ?? null,
+      players: [...roster].map(([id, nickname]) => `${id} ${nickname} (${scores.get(id) ?? 0})`),
+      removed: [...removed],
+    }),
+  { deep: true, immediate: true },
+);
 
 function connect(sessionPin: string, token: string) {
   unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, (state) => {
@@ -407,7 +456,15 @@ if (restored?.hostToken) {
     for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
     for (const playerId of restored.removed ?? []) removed.add(playerId);
     status.value = restored.status as Status;
-  } catch {
+    addDebugSecret(restored.hostToken);
+    debugLog("session restored", {
+      pin: restored.pin,
+      phase: restored.status,
+      q: restored.currentQuestionIndex,
+      players: restored.roster.length,
+    });
+  } catch (e) {
+    debugLog("stored session unusable", { error: describeError(e) });
     quiz.value = null;
     clearHostSession();
   }
@@ -422,6 +479,7 @@ async function loadRemoteSource(src: string) {
     remoteLoaded.value = true;
   } catch (e) {
     remoteError.value = e instanceof Error ? e.message : String(e);
+    debugLog("quiz link failed", { src, error: describeError(e) });
   } finally {
     remoteLoading.value = false;
   }
@@ -447,6 +505,7 @@ async function startQuestion(index: number) {
   answers.clear();
   correctOrder.value = [];
   status.value = "question";
+  debugLog("question started", { q: index, players: roster.size });
   await broadcast();
 }
 
@@ -466,6 +525,12 @@ async function reveal() {
   }
 
   status.value = "reveal";
+  debugLog("revealed", {
+    q: currentQuestionIndex.value,
+    answers: answers.size,
+    players: roster.size,
+    correct: correctOrder.value.join(",") || "none",
+  });
   await broadcast();
 }
 
@@ -476,6 +541,7 @@ async function removePlayer(playerId: string) {
   const nickname = roster.get(playerId);
   if (nickname === undefined) return;
   if (!window.confirm(`«${nickname}» aus dem Quiz entfernen? Die Person kann mit einem anderen Namen neu beitreten.`)) return;
+  debugLog("player removed", { player: playerId, nickname });
   removed.add(playerId);
   roster.delete(playerId);
   scores.delete(playerId);
@@ -485,6 +551,7 @@ async function removePlayer(playerId: string) {
 }
 
 async function showLeaderboard() {
+  debugLog("leaderboard");
   status.value = "leaderboard";
   await broadcast();
 }
@@ -492,6 +559,7 @@ async function showLeaderboard() {
 /** Shows the final standings. The session stays up, heartbeat included, so
  * a phone that slept through this moment still gets its final rank. */
 async function finishQuiz() {
+  debugLog("finished");
   status.value = "finished";
   await broadcast();
 }
@@ -501,6 +569,7 @@ async function finishQuiz() {
 function closeQuiz() {
   if (!pin.value || !hostToken.value) return;
   const [sessionPin, token] = [pin.value, hostToken.value];
+  debugLog("quiz closed", { pin: sessionPin });
   // Stopped before the release: a heartbeat arriving after it would claim
   // the pin again.
   disconnect();
@@ -550,6 +619,7 @@ function resetToSetup() {
 async function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
   if (!window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
+  debugLog("quiz aborted", { pin: pin.value, phase: status.value });
   // Tells connected players the session is over so they leave their current
   // screen too, rather than just going silent on them. A snapshot still
   // scheduled must not follow it and bring the session back.
@@ -676,6 +746,7 @@ onUnmounted(() => {
       <button type="button" @click="closeQuiz">Quiz beenden</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
+        <DebugExport role="host" />
       </div>
     </template>
   </div>

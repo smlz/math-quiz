@@ -54,6 +54,16 @@
           Handy als Vorschlag fürs nächste Mal.
         </dd>
 
+        <dt>Diagnose-Protokoll</dt>
+        <dd>
+          Damit sich Probleme im Unterricht nachvollziehen lassen, schreibt jedes Gerät mit, was es erlebt:
+          Verbindungsabbrüche, gesendete und empfangene Nachrichten, wann der Bildschirm aus war. Dieses Protokoll
+          bleibt im eigenen Browser und verlässt ihn nur, wenn man es unter <a href="/debug">Diagnose</a> selbst
+          kopiert oder teilt. Auf dem Handy enthält es den eigenen Spitznamen und die eigenen Antworten, bei der
+          Lehrperson die Spitznamen und Antworten aller. Es wird nach einem Tag gekürzt und lässt sich dort jederzeit
+          löschen.
+        </dd>
+
         <dt>Server und Protokolle</dt>
         <dd>
           Die Seite wird von GitHub Pages ausgeliefert, der Server läuft bei FastAPI Cloud. Wie bei jedem

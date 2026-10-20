@@ -9,6 +9,8 @@
 // every few seconds regardless, so a dropped frame costs at most one
 // heartbeat. Nothing here replays, buffers or acknowledges anything.
 
+import { debugLog, describeError } from "../debug/debugLog";
+
 // In dev (and therefore in the Playwright e2e run) go through Vite's proxy
 // to the local backend; the production build is served from quiz.smlz.ch,
 // which has no backend of its own, so it targets the relay directly (that
@@ -128,6 +130,10 @@ export function reportAfterGrace(
 
 // Requests
 
+/** A request slower than this is worth a line in the diagnostic log even when
+ * it succeeds. */
+const SLOW_REQUEST_MS = 2000;
+
 /** A request the relay answered with an error status. */
 export class RelayError extends Error {
   readonly status: number;
@@ -143,15 +149,25 @@ async function postJson<T>(
   body?: unknown,
   headers: Record<string, string> = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const startedAt = performance.now();
+  const elapsed = () => `${Math.round(performance.now() - startedAt)}ms`;
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    debugLog("request failed", { path, error: describeError(e), after: elapsed() });
+    throw e;
+  }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    debugLog("request rejected", { path, status: response.status, detail, after: elapsed() });
     throw new RelayError(`POST ${path} failed (${response.status}): ${detail}`, response.status);
   }
+  if (performance.now() - startedAt > SLOW_REQUEST_MS) debugLog("request slow", { path, after: elapsed() });
   return response.json();
 }
 
@@ -180,10 +196,16 @@ export async function joinSession(pin: string): Promise<PlayerCredentials> {
 /** Release the pin so it can be handed out again. Best-effort: a pin the
  * relay never hears about is freed by the next restart anyway. */
 export async function endSession(pin: string, hostToken: string): Promise<void> {
-  await fetch(`${API_BASE}/session/${pin}`, {
-    method: "DELETE",
-    headers: { [HOST_TOKEN_HEADER]: hostToken },
-  });
+  try {
+    const response = await fetch(`${API_BASE}/session/${pin}`, {
+      method: "DELETE",
+      headers: { [HOST_TOKEN_HEADER]: hostToken },
+    });
+    debugLog("session released", { status: response.status });
+  } catch (e) {
+    debugLog("session release failed", { error: describeError(e) });
+    throw e;
+  }
 }
 
 export function publishState(
@@ -223,8 +245,16 @@ export function subscribeToState(
     report("open");
     onSnapshot(JSON.parse((event as MessageEvent).data));
   });
-  source.onopen = () => report("open");
-  source.onerror = () => report("reconnecting");
+  source.onopen = () => {
+    debugLog("state stream open");
+    report("open");
+  };
+  // The relay ends every stream after a few minutes, so one error per
+  // rotation is routine; CONNECTING means the browser is already retrying.
+  source.onerror = () => {
+    debugLog("state stream error", { readyState: ["connecting", "open", "closed"][source.readyState] });
+    report("reconnecting");
+  };
 
   return () => {
     report.cancel();
@@ -259,19 +289,22 @@ export function subscribeToMessages(
         if (!response.ok || !response.body) {
           throw new Error(`message_stream failed (${response.status})`);
         }
+        debugLog("message stream open");
         report("open");
         const openedAt = Date.now();
         for await (const frame of readEventStream(response.body)) {
           if (frame.event === "message") onMessage(JSON.parse(frame.data));
         }
+        debugLog("message stream ended", { after: `${Math.round((Date.now() - openedAt) / 1000)}s` });
         // The relay ends the stream every few minutes; that is routine and
         // is picked up again at once. One that ends straight away is not,
         // and must not turn this into a busy loop.
         if (Date.now() - openedAt < STREAM_MIN_LIFETIME_MS) {
           throw new Error("message_stream closed early");
         }
-      } catch {
+      } catch (e) {
         if (controller.signal.aborted) return;
+        debugLog("message stream failed", { error: describeError(e) });
         report("reconnecting");
         await sleep(1000);
       }

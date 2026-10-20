@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import HostApp from './components/HostApp.vue'
 import PlayerApp from './components/PlayerApp.vue'
+import DebugPage from './components/DebugPage.vue'
 import QuizAbout from './components/QuizAbout.vue'
 import QuizDocs from './components/QuizDocs.vue'
 
@@ -13,11 +14,13 @@ const route = location.pathname
 const isHostRoute = route.startsWith('/create')
 const isDocsRoute = route.startsWith('/docs')
 const isAboutRoute = route.startsWith('/about')
+const isDebugRoute = route.startsWith('/debug')
 </script>
 
 <template>
   <HostApp v-if="isHostRoute" />
   <QuizDocs v-else-if="isDocsRoute" />
   <QuizAbout v-else-if="isAboutRoute" />
+  <DebugPage v-else-if="isDebugRoute" />
   <PlayerApp v-else />
 </template>

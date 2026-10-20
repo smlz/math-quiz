@@ -31,6 +31,7 @@ const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
       <li>
         <a href="/about" target="_blank" rel="noopener">Datenschutz<template v-if="!compact"> &amp; Grenzen</template></a>
       </li>
+      <li><a href="/debug" target="_blank" rel="noopener">Diagnose</a></li>
       <template v-if="!compact">
         <li><a :href="`${SOURCE_URL}/issues`" target="_blank" rel="noopener">Feedback</a></li>
         <li>
@@ -58,6 +59,8 @@ const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
   padding: 0;
   list-style: none;
   white-space: nowrap;
+  /* Only the narrowest phones need a second line. */
+  flex-wrap: wrap;
 }
 .app-footer li {
   padding: 0.2rem 0.4rem;
