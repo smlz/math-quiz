@@ -2,30 +2,72 @@ import { expect, test, type Page } from "@playwright/test";
 
 // What the host screen plays and when (src/sound/hostSound.ts). Headless
 // Chromium has no speakers, so the Web Audio calls themselves are recorded:
-// every audio context created, every clip started (by its length), and every
-// stop scheduled.
+// every audio context created, every clip started (by its file name), and
+// every stop scheduled.
 
 declare global {
   interface Window {
     soundLog: string[];
+    /** What else happened to the audio, printed when the test fails. */
+    soundDiagnostics: string[];
   }
 }
 
 function recordSound() {
   window.soundLog = [];
-  // The first of each choice: the tune "Happy Vibes" (45.5 s), then the cheer
-  // "woohoo" (4.5 s), and as the next one, never the same, "class" (5.8 s once decoded).
+  window.soundDiagnostics = [];
+  // The first of each choice: the tune "Happy Vibes", then the cheer "woohoo",
+  // and as the next one, never the same, "class".
   Math.random = () => 0;
   const Context = window.AudioContext;
   window.AudioContext = class extends Context {
     constructor(...args: ConstructorParameters<typeof AudioContext>) {
       super(...args);
       window.soundLog.push("context");
+      window.soundDiagnostics.push(`context ${this.state}`);
+      this.addEventListener("statechange", () => window.soundDiagnostics.push(`context ${this.state}`));
     }
   };
+
+  // Clips are told apart by the file they came from: their decoded length
+  // differs between browsers' MP3 decoders. The name follows the download
+  // into its bytes and from there into the decoded buffer.
+  const clipNames = new WeakMap<object, string>();
+  const originalFetch = window.fetch;
+  window.fetch = async (...args: Parameters<typeof fetch>) => {
+    const response = await originalFetch(...args);
+    const url = args[0] instanceof Request ? args[0].url : String(args[0]);
+    const name = /\/audio\/([\w-]+)\.mp3$/.exec(url)?.[1];
+    if (name) {
+      const arrayBuffer = response.arrayBuffer.bind(response);
+      response.arrayBuffer = async () => {
+        const data = await arrayBuffer();
+        clipNames.set(data, name);
+        return data;
+      };
+    }
+    return response;
+  };
+  const decode = BaseAudioContext.prototype.decodeAudioData;
+  BaseAudioContext.prototype.decodeAudioData = function (data: ArrayBuffer) {
+    // Looked up first: decoding detaches the bytes.
+    const name = clipNames.get(data) ?? "?";
+    return decode.call(this, data).then(
+      (buffer) => {
+        clipNames.set(buffer, name);
+        window.soundDiagnostics.push(`decoded ${name} ${buffer.duration.toFixed(2)}s`);
+        return buffer;
+      },
+      (error) => {
+        window.soundDiagnostics.push(`decoding ${name} failed: ${error}`);
+        throw error;
+      },
+    );
+  } as typeof decode;
+
   const { start, stop } = AudioBufferSourceNode.prototype;
   const describe = (source: AudioBufferSourceNode) =>
-    `${(source.buffer?.duration ?? 0).toFixed(1)}s${source.loop ? " loop" : ""}`;
+    `${(source.buffer && clipNames.get(source.buffer)) ?? "?"}${source.loop ? " loop" : ""}`;
   AudioBufferSourceNode.prototype.start = function (...args) {
     window.soundLog.push(`start ${describe(this)}`);
     return start.apply(this, args);
@@ -38,6 +80,14 @@ function recordSound() {
 
 const soundLog = (page: Page) => page.evaluate(() => window.soundLog);
 
+let hostPage: Page | null = null;
+test.afterEach(async ({}, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus || !hostPage) return;
+  const diagnostics = await hostPage.evaluate(() => window.soundDiagnostics).catch((e) => [String(e)]);
+  console.log(`sound diagnostics (${testInfo.project.name}):\n  ${diagnostics.join("\n  ")}`);
+  console.log(`sound log: ${JSON.stringify(await soundLog(hostPage).catch(() => null))}`);
+});
+
 test("the host plays a tune through the quiz, cheers for the leaderboard and applause at the end", async ({
   browser,
 }) => {
@@ -45,6 +95,7 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
   const playerContext = await browser.newContext();
   const host = await hostContext.newPage();
   const player = await playerContext.newPage();
+  hostPage = host;
   await host.addInitScript(recordSound);
   await player.addInitScript(recordSound);
 
@@ -69,7 +120,7 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
   // The lobby is quiet; the music starts with the first question.
   expect(await soundLog(host)).toEqual(["context"]);
   await host.getByRole("button", { name: "Frage starten" }).click();
-  await expect.poll(() => soundLog(host)).toEqual(["context", "start 45.5s loop"]);
+  await expect.poll(() => soundLog(host)).toEqual(["context", "start music-happy-vibes loop"]);
 
   // The sample quiz: C, B, A are correct. The tune plays on without restarting.
   const count = async (event: string) => (await soundLog(host)).filter((e) => e === event).length;
@@ -80,18 +131,18 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
     if (question === 0) {
       // The shortest cheer is cut off as soon as the animation is over ...
       await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
-      await expect.poll(() => count("start 4.5s")).toBe(1);
+      await expect.poll(() => count("start cheer-woohoo")).toBe(1);
       await expect(host.locator(".leaderboard__gain")).toHaveCount(0);
-      await expect.poll(() => count("stop 4.5s")).toBe(1);
+      await expect.poll(() => count("stop cheer-woohoo")).toBe(1);
       await host.getByRole("button", { name: "Nächste Frage" }).click();
     } else if (question === 1) {
       // ... a different, longer one plays on, until the next question starts.
       await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
-      await expect.poll(() => count("start 5.8s")).toBe(1);
+      await expect.poll(() => count("start cheer-class")).toBe(1);
       await expect(host.locator(".leaderboard__gain")).toHaveCount(0);
-      expect(await count("stop 5.8s")).toBe(0);
+      expect(await count("stop cheer-class")).toBe(0);
       await host.getByRole("button", { name: "Nächste Frage" }).click();
-      await expect.poll(() => count("stop 5.8s")).toBe(1);
+      await expect.poll(() => count("stop cheer-class")).toBe(1);
     }
   }
   await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
@@ -99,19 +150,19 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
   // The final screen: the tune fades out under 20 s of applause, no cheer.
   await expect.poll(() => soundLog(host)).toEqual([
     "context",
-    "start 45.5s loop",
-    "start 4.5s",
-    "stop 4.5s",
-    "start 5.8s",
-    "stop 5.8s",
-    "stop 45.5s loop",
-    "start 20.4s",
+    "start music-happy-vibes loop",
+    "start cheer-woohoo",
+    "stop cheer-woohoo",
+    "start cheer-class",
+    "stop cheer-class",
+    "stop music-happy-vibes loop",
+    "start final-applause",
   ]);
 
   // Turning the sound off silences the applause at once.
   await toggle.click();
   await expect(toggle).toHaveText("🔇 Ton aus");
-  await expect.poll(() => count("stop 20.4s")).toBe(1);
+  await expect.poll(() => count("stop final-applause")).toBe(1);
 
   // Players' devices never touch audio.
   expect(await soundLog(player)).toEqual([]);
