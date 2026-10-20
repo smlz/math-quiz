@@ -5,6 +5,7 @@ import {
   endSession,
   pointsForReveal,
   publishState,
+  reportAfterGrace,
   subscribeToMessages,
   HEARTBEAT_MS,
   RelayError,
@@ -37,6 +38,9 @@ const MAX_PLAYERS = 200;
 // each snapshot goes out to every player: one per message would be quadratic.
 // All messages within this window are confirmed by a single snapshot instead.
 const BROADCAST_THROTTLE_MS = 500;
+// A failed broadcast is repeated this soon rather than at the next heartbeat,
+// so a single lost request heals before it is worth a banner.
+const BROADCAST_RETRY_MS = 1000;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -89,7 +93,16 @@ watch(
 const pin = ref<string | null>(null);
 const hostToken = ref<string | null>(null);
 const status = ref<Status>("setup");
-const connection = ref<ConnectionStatus>("open");
+// Inbox and broadcasts fail independently, and either one is worth a banner:
+// a successful broadcast says nothing about whether messages still arrive.
+const inboxConnection = ref<ConnectionStatus>("open");
+const broadcastConnection = ref<ConnectionStatus>("open");
+const connection = computed<ConnectionStatus>(() =>
+  inboxConnection.value === "open" && broadcastConnection.value === "open" ? "open" : "reconnecting",
+);
+const reportBroadcast = reportAfterGrace((state) => {
+  broadcastConnection.value = state;
+});
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
@@ -267,19 +280,20 @@ async function broadcast() {
   if (!pin.value || !hostToken.value || status.value === "setup") return;
   try {
     await publishState(pin.value, hostToken.value, buildSnapshot());
-    connection.value = "open";
+    reportBroadcast("open");
   } catch (e) {
     console.warn("Snapshot broadcast failed", e);
-    connection.value = "reconnecting";
+    reportBroadcast("reconnecting");
+    scheduleBroadcast(BROADCAST_RETRY_MS);
   }
 }
 
-/** Broadcasts within BROADCAST_THROTTLE_MS, together with whatever else
- * changes until then. The first message of a burst starts the clock and the
- * later ones ride along, so no sender waits longer than the window. */
-function scheduleBroadcast() {
+/** Broadcasts within `delayMs`, together with whatever else changes until
+ * then. The first message of a burst starts the clock and the later ones
+ * ride along, so no sender waits longer than the window. */
+function scheduleBroadcast(delayMs = BROADCAST_THROTTLE_MS) {
   if (pendingBroadcast !== null) return;
-  pendingBroadcast = window.setTimeout(() => void broadcast(), BROADCAST_THROTTLE_MS);
+  pendingBroadcast = window.setTimeout(() => void broadcast(), delayMs);
 }
 
 function cancelPendingBroadcast() {
@@ -321,7 +335,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
 
 function connect(sessionPin: string, token: string) {
   unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, (state) => {
-    connection.value = state;
+    inboxConnection.value = state;
   });
   heartbeat = window.setInterval(() => void broadcast(), HEARTBEAT_MS);
 }
@@ -330,6 +344,8 @@ function disconnect() {
   unsubscribe?.();
   unsubscribe = null;
   cancelPendingBroadcast();
+  reportBroadcast.cancel();
+  inboxConnection.value = broadcastConnection.value = "open";
   if (heartbeat !== null) {
     clearInterval(heartbeat);
     heartbeat = null;

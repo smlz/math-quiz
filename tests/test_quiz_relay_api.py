@@ -449,6 +449,26 @@ async def test_a_full_queue_drops_the_oldest_frame_not_the_subscriber():
         await _stop_subscriber(stream, task)
 
 
+async def test_a_stream_ends_on_its_own_and_unsubscribes(monkeypatch):
+    # Before the hosting platform's ingress would cut it mid-flight.
+    monkeypatch.setattr(relay, "MAX_STREAM_SECONDS", 0.05)
+
+    async def drain():
+        return [frame async for frame in relay.fanout.subscribe("t")]
+
+    await asyncio.wait_for(drain(), 1)
+    assert not relay.fanout.has_subscribers("t")
+
+
+async def test_a_stream_tells_the_client_how_soon_to_reconnect():
+    frames = relay.fanout.stream("t").body_iterator
+    try:
+        assert await frames.__anext__() == b"retry: %d\n\n" % relay.RECONNECT_MS
+    finally:
+        await frames.aclose()
+    assert not relay.fanout.has_subscribers("t")
+
+
 @pytest.mark.parametrize(
     "origin", [relay.FRONTEND_ORIGIN, "http://127.0.0.1:5173", "http://localhost:5173"]
 )

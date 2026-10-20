@@ -21,6 +21,10 @@ const API_BASE = import.meta.env.DEV
 export const HEARTBEAT_MS = 5000;
 /** No snapshot for this long means something is wrong worth showing. */
 export const STALE_AFTER_MS = 3 * HEARTBEAT_MS;
+/** A connection may be down this long before anyone is told. The relay ends
+ * every stream after a few minutes and a failed publish is retried at once,
+ * so short outages are routine and heal before this runs out. */
+export const RECONNECT_GRACE_MS = 5000;
 
 export const HOST_TOKEN_HEADER = "X-Host-Token";
 export const PLAYER_TOKEN_HEADER = "X-Player-Token";
@@ -83,6 +87,34 @@ export function pointsForReveal(correctPlayerIds: string[], playerId: string): n
 }
 
 export type ConnectionStatus = "open" | "reconnecting";
+
+export interface StatusReporter {
+  (status: ConnectionStatus): void;
+  /** Drops a "reconnecting" that has not been passed on yet. */
+  cancel(): void;
+}
+
+/** Passes "open" on at once, but "reconnecting" only once it has lasted
+ * `graceMs` without an "open" in between. */
+export function reportAfterGrace(
+  onStatus: (status: ConnectionStatus) => void,
+  graceMs = RECONNECT_GRACE_MS,
+): StatusReporter {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const cancel = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+  const report = (status: ConnectionStatus) => {
+    if (status === "open") {
+      cancel();
+      onStatus("open");
+    } else if (timer === null) {
+      timer = setTimeout(() => onStatus("reconnecting"), graceMs);
+    }
+  };
+  return Object.assign(report, { cancel });
+}
 
 // Requests
 
@@ -167,23 +199,31 @@ export function sendMessage(
 // Streams
 
 /** Players read the public state stream with the native EventSource, which
- * reconnects on its own. */
+ * reconnects on its own -- also every time the relay ends the stream, which
+ * is why an error is only reported once it outlasts RECONNECT_GRACE_MS. */
 export function subscribeToState(
   pin: string,
   onSnapshot: (snapshot: SessionSnapshot) => void,
-  onStatus?: (status: ConnectionStatus) => void,
+  onStatus: (status: ConnectionStatus) => void = () => {},
 ): () => void {
   const source = new EventSource(`${API_BASE}/session/${pin}/state_stream`);
+  const report = reportAfterGrace(onStatus);
 
   source.addEventListener("state", (event) => {
-    onStatus?.("open");
+    report("open");
     onSnapshot(JSON.parse((event as MessageEvent).data));
   });
-  source.onopen = () => onStatus?.("open");
-  source.onerror = () => onStatus?.("reconnecting");
+  source.onopen = () => report("open");
+  source.onerror = () => report("reconnecting");
 
-  return () => source.close();
+  return () => {
+    report.cancel();
+    source.close();
+  };
 }
+
+/** A stream the relay ended sooner than this is treated as a failure. */
+const STREAM_MIN_LIFETIME_MS = 10_000;
 
 /**
  * The host reads its inbox with `fetch` instead of EventSource, because the
@@ -194,9 +234,10 @@ export function subscribeToMessages(
   pin: string,
   hostToken: string,
   onMessage: (message: IncomingMessage) => void,
-  onStatus?: (status: ConnectionStatus) => void,
+  onStatus: (status: ConnectionStatus) => void = () => {},
 ): () => void {
   const controller = new AbortController();
+  const report = reportAfterGrace(onStatus);
 
   void (async () => {
     while (!controller.signal.aborted) {
@@ -208,20 +249,29 @@ export function subscribeToMessages(
         if (!response.ok || !response.body) {
           throw new Error(`message_stream failed (${response.status})`);
         }
-        onStatus?.("open");
+        report("open");
+        const openedAt = Date.now();
         for await (const frame of readEventStream(response.body)) {
           if (frame.event === "message") onMessage(JSON.parse(frame.data));
         }
-        throw new Error("message_stream closed");
+        // The relay ends the stream every few minutes; that is routine and
+        // is picked up again at once. One that ends straight away is not,
+        // and must not turn this into a busy loop.
+        if (Date.now() - openedAt < STREAM_MIN_LIFETIME_MS) {
+          throw new Error("message_stream closed early");
+        }
       } catch {
         if (controller.signal.aborted) return;
-        onStatus?.("reconnecting");
+        report("reconnecting");
         await sleep(1000);
       }
     }
   })();
 
-  return () => controller.abort();
+  return () => {
+    report.cancel();
+    controller.abort();
+  };
 }
 
 interface StreamFrame {

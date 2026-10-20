@@ -350,10 +350,16 @@ What each side keeps locally:
 - Both entries are removed when the quiz finishes. There is deliberately no
   TTL: a quiz that is never formally finished keeps its entry so it can
   still be resumed later.
+- Both streams **end on their own after 270 s** and carry an SSE `retry: 500`
+  field. FastAPI Cloud's ingress cuts every response after 300 s; ending
+  first turns that into a clean close, which the host picks up again at once
+  and `EventSource` after 0.5 s instead of its default ~3 s. A failed host
+  publish is retried after 1 s rather than at the next heartbeat.
 - Failures are made **visible** rather than healed silently: both roles show
-  a "reconnecting" banner (the host when a publish fails or its stream
-  drops, the player after three missed heartbeats), so it is known whether
-  this happens in practice.
+  a "reconnecting" banner (the host when publishing or its stream has been
+  failing for 5 s, the player when its stream has been down for 5 s or after
+  three missed heartbeats), so it is known whether this happens in practice.
+  Shorter outages, like the stream rotation above, stay unannounced.
 
 ## 5. Scoring
 

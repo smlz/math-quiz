@@ -39,12 +39,16 @@ Each session has two streams:
                      read another's messages. The host reads it with `fetch`
                      + ReadableStream, which *can* send a header.
 
+Both streams end on their own after a few minutes, before the hosting
+platform's ingress would cut them, and clients simply reconnect.
+
 Everything is mounted under `/api/v1`, except the `/` health check.
 """
 
 import asyncio
 import base64
 import collections
+import contextlib
 import hashlib
 import hmac
 import json
@@ -94,6 +98,13 @@ PLAYER_TOKEN_HEADER = "X-Player-Token"
 MAX_BODY_BYTES = 64 * 1024
 
 KEEP_ALIVE_SECONDS = 20
+# FastAPI Cloud's ingress cuts every response after 300 s. Ending the stream
+# ourselves a little earlier turns that into a clean close, which clients
+# answer with a prompt reconnect instead of an error.
+MAX_STREAM_SECONDS = 270
+# Sent as the SSE `retry` field: how long EventSource waits before it
+# reconnects, instead of the browser default of about 3 s.
+RECONNECT_MS = 500
 # One slot is enough for the state stream (only the newest snapshot matters)
 # but the host inbox can legitimately burst when 25 players answer at once.
 QUEUE_SIZE = 50
@@ -200,12 +211,16 @@ class Fanout:
         return topic in self._queues
 
     async def subscribe(self, topic: str) -> AsyncIterator[bytes]:
+        """Yield the topic's frames for MAX_STREAM_SECONDS, then end."""
         queue: asyncio.Queue[bytes] = asyncio.Queue(QUEUE_SIZE)
         self._queues[topic].add(queue)
+        deadline = time.monotonic() + MAX_STREAM_SECONDS
         try:
-            while True:
+            while (remaining := deadline - time.monotonic()) > 0:
                 try:
-                    yield await asyncio.wait_for(queue.get(), KEEP_ALIVE_SECONDS)
+                    yield await asyncio.wait_for(
+                        queue.get(), min(KEEP_ALIVE_SECONDS, remaining)
+                    )
                 except asyncio.TimeoutError:
                     yield b": keep-alive\n\n"
         finally:
@@ -214,9 +229,15 @@ class Fanout:
             if not subscribers:
                 del self._queues[topic]
 
+    async def _frames(self, topic: str) -> AsyncIterator[bytes]:
+        yield f"retry: {RECONNECT_MS}\n\n".encode()
+        async with contextlib.aclosing(self.subscribe(topic)) as frames:
+            async for frame in frames:
+                yield frame
+
     def stream(self, topic: str) -> StreamingResponse:
         return StreamingResponse(
-            self.subscribe(topic),
+            self._frames(topic),
             media_type="text/event-stream",
             # Without these an intermediate proxy may buffer the stream and
             # deliver events in batches, or not at all.
