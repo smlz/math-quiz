@@ -265,7 +265,11 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    their new places, marked with the ranks gained or lost. The final
    leaderboard is revealed the same way.
 5. Host clicks "Next" to loop back to step 2, or "Finish" after the last
-   question to show the final leaderboard and end the session.
+   question to show the final leaderboard. The final screen keeps
+   broadcasting like every other phase, so a phone that was asleep at that
+   moment still gets its final rank. Only the host's "End quiz" button on
+   the final screen stops the broadcasts, releases the pin and returns the
+   host to the setup screen.
 
 Host actions are explicit HTTP calls that publish a new state snapshot
 (`POST /api/v1/session/{pin}/state`); players see the change on their SSE
@@ -348,7 +352,9 @@ What each side keeps locally:
   there is nothing on the server to re-fetch. The quiz source is only
   re-parsed, not re-validated with Typst, since it already compiled cleanly
   when the session was created.
-- Both entries are removed when the quiz finishes. There is deliberately no
+- Both entries are removed when the quiz is over: the player's when it sees
+  the final snapshot, the host's when it closes the final screen (so a host
+  reload there still restores it). There is deliberately no
   TTL: a quiz that is never formally finished keeps its entry so it can
   still be resumed later.
 - Both streams **end on their own after 270 s** and carry an SSE `retry: 500`

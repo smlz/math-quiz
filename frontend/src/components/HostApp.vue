@@ -356,9 +356,10 @@ function disconnect() {
 
 // A running quiz only exists in this browser (the relay stores nothing at
 // all), so everything needed to carry on after a reload is mirrored to
-// localStorage until the quiz is finished.
+// localStorage until the host closes the quiz. That includes the final
+// screen, which keeps broadcasting after a reload too.
 function persistSession() {
-  if (!pin.value || !hostToken.value || status.value === "setup" || status.value === "finished") return;
+  if (!pin.value || !hostToken.value || status.value === "setup") return;
   saveHostSession({
     pin: pin.value,
     hostToken: hostToken.value,
@@ -488,14 +489,24 @@ async function showLeaderboard() {
   await broadcast();
 }
 
+/** Shows the final standings. The session stays up, heartbeat included, so
+ * a phone that slept through this moment still gets its final rank. */
 async function finishQuiz() {
   status.value = "finished";
-  // Dropped before the first await: the final screen renders as soon as the
-  // status flips, so anything awaiting it would otherwise still see the entry.
-  clearHostSession();
   await broadcast();
-  if (pin.value && hostToken.value) await endSession(pin.value, hostToken.value);
+}
+
+/** Leaves the final screen. Only now do the snapshots stop and the pin is
+ * released. */
+function closeQuiz() {
+  if (!pin.value || !hostToken.value) return;
+  const [sessionPin, token] = [pin.value, hostToken.value];
+  // Stopped before the release: a heartbeat arriving after it would claim
+  // the pin again.
   disconnect();
+  clearHostSession();
+  resetToSetup();
+  endSession(sessionPin, token).catch((e) => console.warn("Releasing the pin failed", e));
 }
 
 // The last question has no next round to show a leaderboard before, so it
@@ -651,7 +662,7 @@ onUnmounted(() => {
       <div class="host-app__panel">
         <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="false" />
       </div>
-      <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Quiz beenden" : "Nächste Frage" }}</button>
+      <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Endergebnis anzeigen" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
@@ -662,8 +673,9 @@ onUnmounted(() => {
       <div class="host-app__panel">
         <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="true" />
       </div>
+      <button type="button" @click="closeQuiz">Quiz beenden</button>
       <div class="host-app__footer">
-        <button type="button" class="host-app__end" @click="resetToSetup">Neues Quiz erstellen</button>
+        <span class="host-app__progress">{{ questionProgress }}</span>
       </div>
     </template>
   </div>

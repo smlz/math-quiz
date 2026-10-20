@@ -156,7 +156,7 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const adaContext = await browser.newContext();
   const host = await hostContext.newPage();
-  const ada = await adaContext.newPage();
+  let ada = await adaContext.newPage();
 
   await host.goto("/create");
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
@@ -204,19 +204,30 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await host.getByRole("button", { name: "Nächste Frage" }).click();
   await answerOption(ada, 0);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+
+  // --- Ada's phone is away while the final screen goes up. It only comes
+  // back after that broadcast, so the final rank has to reach it with a
+  // later heartbeat. ---
+  const adaUrl = ada.url();
+  await ada.close();
   await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
-
-  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
-  // Ada sees the SSE event before the host's own `advance` call returns, so
-  // wait for the host's final screen too -- it renders only after the host
-  // has dropped its stored session.
   await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
-
-  // Finishing the quiz must drop both stored credentials.
-  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
+  ada = await adaContext.newPage();
+  await ada.goto(adaUrl);
+  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible({
+    timeout: 10_000,
+  });
+  // The player's credential is useless once it has seen the end ...
   expect(
     await ada.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("math-quiz-player:"))),
   ).toEqual([]);
+
+  // ... the host's only once the teacher closes the final screen.
+  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).not.toBeNull();
+  await host.getByRole("button", { name: "Quiz beenden" }).click();
+  await expect(host.getByRole("button", { name: "Quiz erstellen" })).toBeVisible();
+  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
 
   await hostContext.close();
   await adaContext.close();
