@@ -6,17 +6,20 @@ import { expect, test, type Page } from "@playwright/test";
 // carry a token.
 
 /** Opens /debug next to the quiz tab and returns the log shown for `title`.
- * The quiz tab writes its log with a short delay, hence the retries. */
+ * The quiz tab writes its log with a short delay; /debug follows along. */
 async function readDebugPage(page: Page, title: string, expected: string[]): Promise<string> {
   const debug = await page.context().newPage();
+  // Shows up in the test output, should the page itself break.
+  debug.on("pageerror", (error) => console.log(`[/debug pageerror] ${error.message}`));
+  debug.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") console.log(`[/debug ${message.type()}] ${message.text()}`);
+  });
   await debug.goto("/debug");
-  const section = debug.locator("section", { has: debug.getByRole("heading", { name: title }) });
-  let text = "";
-  await expect(async () => {
-    await debug.getByRole("button", { name: "Aktualisieren" }).click();
-    text = (await section.locator("pre").textContent()) ?? "";
-    for (const part of expected) expect(text).toContain(part);
-  }).toPass({ timeout: 10_000 });
+  // A plain assertion rather than a retried block: a failure then shows the
+  // text that was there, or that the section was missing altogether.
+  const log = debug.locator("section", { has: debug.getByRole("heading", { name: title }) }).locator("pre");
+  for (const part of expected) await expect(log).toContainText(part, { timeout: 10_000 });
+  const text = (await log.textContent()) ?? "";
   await debug.close();
   return text;
 }

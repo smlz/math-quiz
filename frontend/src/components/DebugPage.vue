@@ -2,8 +2,8 @@
 // Reachable at any time, also while a quiz runs in another tab, and also
 // when the quiz screen itself is stuck: it only reads what the quiz pages
 // stored on this device. Like the about page, it loads nothing from anyone.
-import { computed, ref } from "vue";
-import { clearDebugLog, formatDebugLog, hasDebugLog, type DebugRole } from "../debug/debugLog";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { clearDebugLog, formatDebugLog, hasDebugLog, isDebugLogKey, type DebugRole } from "../debug/debugLog";
 import DebugExport from "./DebugExport.vue";
 
 const SECTIONS: { role: DebugRole; title: string }[] = [
@@ -11,8 +11,14 @@ const SECTIONS: { role: DebugRole; title: string }[] = [
   { role: "host", title: "Als Lehrperson" },
 ];
 
-// Re-read on demand: the quiz tab keeps writing while this page is open.
+// The quiz tab keeps writing while this page is open: re-read whenever it
+// does, and on demand where a browser leaves out the `storage` event.
 const version = ref(0);
+const onStorage = (event: StorageEvent) => {
+  if (isDebugLogKey(event.key)) version.value++;
+};
+onMounted(() => window.addEventListener("storage", onStorage));
+onUnmounted(() => window.removeEventListener("storage", onStorage));
 const logs = computed(() => {
   void version.value;
   return SECTIONS.filter(({ role }) => hasDebugLog(role)).map((section) => ({

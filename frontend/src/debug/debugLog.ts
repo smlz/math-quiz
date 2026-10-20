@@ -52,6 +52,12 @@ function storageKey(forRole: DebugRole): string {
   return KEY_PREFIX + forRole;
 }
 
+/** True for the localStorage key of any role's log, e.g. in a `storage`
+ * event from the quiz tab. */
+export function isDebugLogKey(key: string | null): boolean {
+  return key === null || key.startsWith(KEY_PREFIX);
+}
+
 /** Starts recording for this page. Picks up what an earlier page load of the
  * same role left behind, and listens to the browser events that explain most
  * trouble on phones: sleeping, losing the network, crashing. */
