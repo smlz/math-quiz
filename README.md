@@ -1,6 +1,6 @@
 # Math Quiz
 
-[![Test](https://github.com/smlz/math-quiz/actions/workflows/test.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/test.yml)
+[![CI](https://github.com/smlz/math-quiz/actions/workflows/ci.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 A live quiz app for maths lessons. A **host** runs the game on a shared screen
@@ -86,8 +86,9 @@ npm run preview    # serve the production bundle locally
 The backend needs no build step; deploy it with `uv run fastapi deploy`, or
 with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
 
-The [deploy workflow](.github/workflows/deploy.yml) deploys on every push to
-`main`, after the full [test suite](.github/workflows/test.yml) has passed.
+The [CI workflow](.github/workflows/ci.yml) runs the full test suite on every
+push to `main`. Pushing a version tag (`v` plus the version in
+`pyproject.toml`, e.g. `v1.0.8`) also deploys, once the tests have passed.
 
 ## Running tests
 

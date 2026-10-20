@@ -31,7 +31,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   // Players join on phones, and every iOS browser runs on WebKit. CI runs
-  // each project as its own job (see .github/workflows/test.yml).
+  // each project as its own job (see .github/workflows/ci.yml).
   projects: [
     {
       name: "chromium",

@@ -1,0 +1,175 @@
+name: CI
+
+# Every run tests; a run for a release tag (v1.2.3) then deploys.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      test: ${{ steps.check.outputs.test }}
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true
+      - id: check
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+              if [ "$GITHUB_REF" != "refs/tags/v$VERSION" ]; then
+                echo "::error::$GITHUB_REF is not the release tag v$VERSION"
+                exit 1
+              fi
+              echo "test=true" >> "$GITHUB_OUTPUT"
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+              ;;
+            refs/heads/*)
+              # `git push origin main v1.2.3` starts a run for the branch and
+              # one for the tag; leave this commit to the tag's run.
+              if [ -n "$(git tag --points-at HEAD 'v*')" ]; then
+                echo "test=false" >> "$GITHUB_OUTPUT"
+              else
+                echo "test=true" >> "$GITHUB_OUTPUT"
+              fi
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "test=true" >> "$GITHUB_OUTPUT"
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  backend:
+    needs: release
+    if: needs.release.outputs.test == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -v
+
+  frontend:
+    needs: release
+    if: needs.release.outputs.test == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  e2e:
+    needs: release
+    if: needs.release.outputs.test == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # Let every browser finish, so one failure doesn't hide another.
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          # Same uv.lock as the backend job, which runs in parallel and saves
+          # this cache; saving here too only races it for the same key.
+          save-cache: false
+      - run: uv sync --locked
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - working-directory: frontend
+        run: npx playwright test --project=${{ matrix.browser }}
+
+  build:
+    needs: [release, backend, frontend, e2e]
+    if: needs.release.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    # `npm ci` runs every dependency's install scripts here, so this job gets
+    # nothing beyond read access; only deploy-frontend can publish to Pages.
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The footer shows the release tag of the built commit, if any.
+          fetch-tags: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: frontend/dist
+
+  deploy-frontend:
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  deploy-backend:
+    needs: [release, backend, frontend, e2e]
+    if: needs.release.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run fastapi deploy
+        env:
+          FASTAPI_CLOUD_TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}
+          FASTAPI_CLOUD_APP_ID: ${{ secrets.FASTAPI_CLOUD_APP_ID }}
