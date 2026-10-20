@@ -233,6 +233,45 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await adaContext.close();
 });
 
+test("the reveal confirms a join the question left unconfirmed", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const adaContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const ada = await adaContext.newPage();
+
+  await host.goto("/create");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = await host.locator(".host-lobby__pin").textContent();
+
+  await ada.goto(`/?pin=${pin}`);
+  await ada.getByLabel("Nickname").fill("Ada");
+  await ada.getByRole("button", { name: "Beitreten" }).click();
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  // After the reload nothing in the question phase confirms the join.
+  await ada.reload();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  // A wrong answer keeps Ada off the reveal's list of correct players, so
+  // only her total in the reveal can tell her the join landed.
+  await answerOption(ada, 0);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(ada.locator(".player-app__reveal-wrong")).toBeVisible();
+
+  let joinsAfterReveal = 0;
+  ada.on("request", (request) => {
+    if (request.url().endsWith("/message") && request.postDataJSON()?.type === "join") joinsAfterReveal++;
+  });
+  // Longer than the 2 s re-send interval, with room for one in flight.
+  await ada.waitForTimeout(4500);
+  expect(joinsAfterReveal).toBeLessThanOrEqual(1);
+
+  await hostContext.close();
+  await adaContext.close();
+});
+
 test("a lost answer is re-sent while the join is still unconfirmed", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const adaContext = await browser.newContext();

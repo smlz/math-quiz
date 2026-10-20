@@ -131,6 +131,10 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       // a repeat, a reload or a missed reveal cannot skew anything.
       lastPoints.value = pointsForReveal(snapshot.players, me);
       applyScores(snapshot.scores, me);
+      // The totals cover everyone on the host's roster, right or wrong, so
+      // having one proves the join landed -- a join left unconfirmed by the
+      // question (see `tick`) stops being re-sent here.
+      if (snapshot.scores && Object.hasOwn(snapshot.scores, me)) joinAcknowledged.value = true;
       status.value = "reveal";
       break;
     case "leaderboard":
