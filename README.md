@@ -127,3 +127,9 @@ so no servers need to be running beforehand.
 ## License
 
 AGPLv3 — see [LICENSE](LICENSE).
+
+The music and crowd sounds on the host screen are CC0 (public domain), except
+“C64 Happy Loop” by Emma Andersson (Emma_MA), which is CC BY 4.0. Where they
+all come from is listed in
+[frontend/public/audio/CREDITS.md](frontend/public/audio/CREDITS.md), which the
+app's footer links to.

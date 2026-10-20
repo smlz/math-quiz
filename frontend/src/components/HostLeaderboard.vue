@@ -11,6 +11,10 @@ const props = defineProps<{
   finished: boolean;
 }>();
 
+// `celebrate`: the points start counting, and someone has scored at all.
+// `settled`: the animation is over. Between the two, people cheer.
+const emit = defineEmits<{ celebrate: []; settled: [] }>();
+
 // Only the top 5 players are shown, regardless of how many joined.
 const TOP_N = 5;
 
@@ -121,6 +125,7 @@ async function play(from: LeaderboardEntry[], to: LeaderboardEntry[]) {
   const after = new Map(to.map((entry, index) => [entry.player_id, { ...entry, index }]));
 
   // 1. Points
+  if (to.some((entry) => entry.score !== (before.get(entry.player_id)?.score ?? 0))) emit("celebrate");
   let scorers = 0;
   await Promise.all(
     rows.value.map(async (row) => {
@@ -174,6 +179,7 @@ async function play(from: LeaderboardEntry[], to: LeaderboardEntry[]) {
   }
 
   animating = false;
+  emit("settled");
   // Also picks up whatever changed meanwhile, e.g. a late joiner.
   showStandings();
 }

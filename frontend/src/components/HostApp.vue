@@ -26,12 +26,14 @@ import { fetchQuizSource } from "../quiz/remoteSource";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
 import { renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
+import { attachSound, playCheer, playFinale, playMusic, settleCheer, stopCheer, stopSound } from "../sound/hostSound";
 import AppFooter from "./AppFooter.vue";
 import DebugExport from "./DebugExport.vue";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
+import SoundToggle from "./SoundToggle.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
 // Generous for one class, but bounds what a flood of joins from strangers who
@@ -489,10 +491,32 @@ async function loadRemoteSource(src: string) {
 // the editor for a fresh start.
 if (remoteSource && !hostToken.value) void loadRemoteSource(remoteSource);
 
+// Only once the teacher has turned the sound on (hostSound.ts). The lobby is
+// quiet. The tune starts with the first question, runs to the last
+// leaderboard without restarting, and gives way to applause on the final
+// screen. A session restored onto the final screen stays quiet: its applause
+// has already been had.
+watch(
+  status,
+  (now, before) => {
+    // A leaderboard left before its animation is over takes its cheer along.
+    stopCheer();
+    if (now === "setup") stopSound();
+    else if (now === "finished") {
+      if (before !== undefined) playFinale();
+    } else if (now !== "lobby") playMusic();
+  },
+  { immediate: true },
+);
+
+let detachSound: (() => void) | null = null;
+
 // Nothing to recover from the relay: it never knew anything about this
 // session in the first place, so resuming is just reconnecting and
 // broadcasting again.
 onMounted(() => {
+  // After a reload the browser holds the music back until the next click.
+  detachSound = attachSound();
   if (!pin.value || !hostToken.value) return;
   connect(pin.value, hostToken.value);
   void broadcast();
@@ -637,6 +661,8 @@ async function endQuizNow() {
 onUnmounted(() => {
   clearTimeout(previewTimer);
   disconnect();
+  detachSound?.();
+  stopSound();
 });
 </script>
 
@@ -715,6 +741,7 @@ onUnmounted(() => {
       <button type="button" @click="reveal">{{ answerButtonLabel }}</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
+        <SoundToggle />
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
@@ -724,17 +751,25 @@ onUnmounted(() => {
       <button type="button" @click="afterReveal">{{ isLastQuestion ? "Endergebnis anzeigen" : "Rangliste anzeigen" }}</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
+        <SoundToggle />
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
 
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="false" />
+        <HostLeaderboard
+          :standings="standings"
+          :previous="previousStandings"
+          :finished="false"
+          @celebrate="playCheer"
+          @settled="settleCheer"
+        />
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Endergebnis anzeigen" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
+        <SoundToggle />
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
@@ -746,6 +781,7 @@ onUnmounted(() => {
       <button type="button" @click="closeQuiz">Quiz beenden</button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
+        <SoundToggle />
         <DebugExport role="host" />
       </div>
     </template>

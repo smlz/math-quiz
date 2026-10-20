@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import QRCode from "qrcode";
+import SoundToggle from "./SoundToggle.vue";
 
 const props = defineProps<{
   pin: string;
@@ -50,7 +51,10 @@ watch(
     <button type="button" class="host-lobby__start" :disabled="players.length === 0" @click="$emit('start')">
       Frage starten
     </button>
-    <button type="button" class="host-lobby__end" @click="$emit('end')">Quiz abbrechen</button>
+    <div class="host-lobby__footer">
+      <SoundToggle />
+      <button type="button" class="host-lobby__end" @click="$emit('end')">Quiz abbrechen</button>
+    </div>
   </section>
 </template>
 
@@ -66,9 +70,13 @@ watch(
   width: 100%;
   margin-top: auto;
 }
-.host-lobby__end {
-  align-self: center;
+.host-lobby__footer {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
   margin-top: 0.4rem;
+}
+.host-lobby__end {
   padding: 0.2rem 0.4rem;
   background: none;
   border: none;

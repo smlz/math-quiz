@@ -529,6 +529,24 @@ purges the whole map.
  + counts shown, plus a **"Show
   leaderboard"** button to advance), leaderboard (**top 5 players only**,
   ranked by cumulative score), "Next" control.
+- **Host sound** (`frontend/src/sound/hostSound.ts`, clips and their
+  credits in `frontend/public/audio/`, CC0 except one CC BY tune, which the
+  footer's "Musik-Nachweise" link attributes): **off by default**; a
+  "Ton an/aus" switch in the footer of every host screen from the lobby on
+  turns it on, and the choice is remembered in `localStorage`. While it is
+  off, no audio context exists and nothing is loaded. When on: the lobby is
+  quiet; a cheerful tune, one of four per quiz in random order (each once
+  before any repeats, remembered in `localStorage`), starts with the first
+  question and loops to the last leaderboard without restarting between
+  phases; while a leaderboard animates (only if anyone scored), one
+  of three short clapping-and-cheering clips plays, picked at random and
+  never the same twice in a row — the shortest is cut off with a short fade
+  when the animation ends, the other two play out, and every cheer stops
+  when the next question starts; on the final screen the tune crossfades
+  into roaring applause (both fades take 2.5 s). Closing or aborting the quiz silences everything.
+  Browsers only allow audio after a click, so after a reload mid-quiz the
+  music resumes with the host's next click. Players' devices never play or
+  load any sound.
 - **Player view** (`/`, the site root): join screen (PIN entry or QR scan →
   prefilled PIN), nickname entry (first-time) and a link to the host view,
   hidden when the page was opened with a PIN (i.e. from the QR code); then an answer UI of **exactly four plain

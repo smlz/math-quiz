@@ -17,6 +17,9 @@ const { commit, tag } = __SOURCE_VERSION__;
 const ref = tag ?? commit;
 const sourceHref = ref ? `${SOURCE_URL}/tree/${ref}` : SOURCE_URL;
 const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
+// Where the host screen's music comes from; one tune is CC BY, which asks for
+// this attribution.
+const soundCreditsHref = `${SOURCE_URL}/blob/${ref ?? "main"}/frontend/public/audio/CREDITS.md`;
 </script>
 
 <template>
@@ -34,6 +37,7 @@ const versionLabel = [tag, commit?.slice(0, 7)].filter(Boolean).join(", ");
       <li><a href="/debug" target="_blank" rel="noopener">Diagnose</a></li>
       <template v-if="!compact">
         <li><a :href="`${SOURCE_URL}/issues`" target="_blank" rel="noopener">Feedback</a></li>
+        <li><a :href="soundCreditsHref" target="_blank" rel="noopener">Musik-Nachweise</a></li>
         <li>
           Gesetzt mit
           <a href="https://typst.app" target="_blank" rel="noopener">Typst</a>
