@@ -256,8 +256,8 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
 4. **Leaderboard**: host clicks "Show leaderboard" and broadcasts the
    players in rank order. The host screen shows the **top 5** by cumulative
    score with nicknames and points; each player sees only their own rank,
-   derived from their position in that list. Players tied on score share the
-   same rank on the host screen (standard competition ranking: two players
+   derived from the scores in the snapshot (§6.2). Players tied on score share
+   the same rank on both screens (standard competition ranking: two players
    tied for 1st are both shown as "1.", and the next distinct score is
    ranked 3rd, not 2nd). The host screen first shows the standings from
    before the question and then animates them into the new ones: the points
@@ -336,11 +336,12 @@ relay durable, **reliability comes from idempotent state transfer**:
 
 What each side keeps locally:
 
-- **Player**: `{player_id, player_token, nickname, score, selectedIndex,
+- **Player**: `{player_id, player_token, nickname, selectedIndex,
   answeredQuestionIndex}` in localStorage under `math-quiz-player:{pin}`.
   Because tokens are signed rather than stored server-side, resuming needs
   **no request at all**. The player's own choice is kept here because a
-  snapshot only says *that* someone answered, never what.
+  snapshot only says *that* someone answered, never what. The score is not:
+  it arrives with every snapshot from the reveal on (§6.2).
 - **Host**: quiz source, `pin`/`host_token`, phase, roster, scores, the
   current question's answers and the frozen correct-order list, under
   `math-quiz-host`. Resuming is just reconnecting and broadcasting again —
@@ -372,9 +373,12 @@ What each side keeps locally:
   costs anyone the bonus. Points beyond the first two correct answers do not
   decay further (there is no time limit, §4.1).
 - At reveal the host publishes the correct answerers **in that order**, so
-  points are a pure function of a player's position in that list. Host and
-  player run the identical function, so their totals cannot drift, and no
-  timestamp ever has to cross the wire.
+  the points just won are a pure function of a player's position in that
+  list, and no timestamp ever has to cross the wire.
+- Totals are **not** added up on the phone. A phone that slept through a
+  reveal would miss those points, and one that reloaded during it would count
+  them twice. From the reveal on, every snapshot carries the host's totals
+  instead, and the player takes its score and rank from there.
 - No streak bonus in v1 (can be a future extension).
 - Running totals are kept by the host; the final leaderboard is shown at
   `FINISHED`.
@@ -428,7 +432,8 @@ class HostState:
 ```
 
 **The snapshot** is what the host publishes, and it is deliberately tiny —
-nicknames and scores never cross the wire at all:
+nicknames never cross the wire at all, and scores only keyed by the random
+`player_id`:
 
 ```python
 class SessionSnapshot(TypedDict):
@@ -436,6 +441,9 @@ class SessionSnapshot(TypedDict):
     question_index: int | None
     players: list[str]        # meaning depends on phase, see below
     correct_index: NotRequired[int]   # reveal only
+    scores: NotRequired[dict[str, int]]  # reveal, leaderboard, finished:
+                                         # player_id -> cumulative score
+    removed: NotRequired[list[str]]   # players the host removed
 ```
 
 `players` carries a different meaning per phase, which is what keeps it this
@@ -445,9 +453,9 @@ small:
 |-------|--------------|--------------------|
 | `lobby` | everyone who has joined | "my join landed" |
 | `question` | everyone who has answered | "my answer landed" |
-| `reveal` | who was correct, in arrival order | correct? → am I in it; points → my index (§5) |
-| `leaderboard` | everyone, in rank order | my rank → my index |
-| `finished` | everyone, in rank order | my final rank |
+| `reveal` | who was correct, in arrival order | correct? → am I in it; points → my index (§5); total → `scores` |
+| `leaderboard` | everyone, in rank order | total and rank → `scores` |
+| `finished` | everyone, in rank order | final total and rank → `scores` |
 
 `correct_index` appears **only** in the `reveal` phase, and what any given
 player chose is never broadcast at all — so nobody watching the public
@@ -676,8 +684,9 @@ message history.
   resolves the sender from `X-Player-Token`, never from the body, and tags
   the republished message with that `player_id`.
 - Correctness and points are computed **client-side**: the host knows the
-  correct answer because it parsed the quiz, and the player derives its own
-  points from its position in the reveal snapshot's list (§5). The relay
+  correct answer because it parsed the quiz, and the player derives the
+  points it just won from its position in the reveal snapshot's list, and
+  takes its total from the snapshot's `scores` (§5). The relay
   never learns which option is correct, and never counts anything.
 
 ### 12.2 Build order

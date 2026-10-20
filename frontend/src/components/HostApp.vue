@@ -5,6 +5,7 @@ import {
   endSession,
   pointsForReveal,
   publishState,
+  rankForScore,
   reportAfterGrace,
   subscribeToMessages,
   HEARTBEAT_MS,
@@ -157,15 +158,12 @@ const questionProgress = computed(() =>
 );
 
 function rankPlayers(scoreByPlayer: Map<string, number>): LeaderboardEntry[] {
-  const sorted = [...roster.entries()]
+  const entries = [...roster.entries()]
     .map(([player_id, nickname]) => ({ player_id, nickname, score: scoreByPlayer.get(player_id) ?? 0 }))
     .sort((a, b) => b.score - a.score);
-  // Standard competition ranking: ties share a rank, next rank skips ahead.
-  let rank = 0;
-  return sorted.map((entry, i) => {
-    if (i === 0 || entry.score !== sorted[i - 1].score) rank = i + 1;
-    return { ...entry, rank };
-  });
+  // The same rule the players use to work out their own rank.
+  const allScores = entries.map((entry) => entry.score);
+  return entries.map((entry) => ({ ...entry, rank: rankForScore(allScores, entry.score) }));
 }
 
 const standings = computed(() => rankPlayers(scores));
@@ -246,7 +244,8 @@ async function loadAndCreateSession() {
  *
  * `players` carries a different meaning per phase (see SessionSnapshot):
  * who has joined, who has answered, who was correct and in what order, or
- * the rank order. Nicknames and scores stay here on the host.
+ * the rank order. From the reveal on it also carries everyone's total, so a
+ * player's score is always the host's. Nicknames stay here on the host.
  */
 function buildSnapshot(): SessionSnapshot {
   const phase = status.value === "setup" ? "lobby" : status.value;
@@ -265,6 +264,9 @@ function buildSnapshot(): SessionSnapshot {
     players,
     ...(phase === "reveal" && currentQuestion.value
       ? { correct_index: currentQuestion.value.correctIndex }
+      : {}),
+    ...(phase === "reveal" || phase === "leaderboard" || phase === "finished"
+      ? { scores: Object.fromEntries(standings.value.map((entry) => [entry.player_id, entry.score])) }
       : {}),
     // Tells a removed player's device to drop its identity.
     ...(removed.size ? { removed: [...removed] } : {}),

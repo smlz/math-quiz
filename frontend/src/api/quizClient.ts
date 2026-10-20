@@ -37,7 +37,7 @@ export type Phase = "lobby" | "question" | "reveal" | "leaderboard" | "finished"
  * Everything a player needs to render, in full, every time.
  *
  * `players` carries a different meaning per phase, which is what keeps the
- * snapshot this small -- nicknames and scores never travel at all:
+ * snapshot this small -- nicknames never travel at all:
  *
  *   lobby        everyone who has joined      -- "my join landed"
  *   question     everyone who has answered    -- "my answer landed"
@@ -45,10 +45,10 @@ export type Phase = "lobby" | "question" | "reveal" | "leaderboard" | "finished"
  *   leaderboard  everyone, in rank order
  *   finished     everyone, in rank order
  *
- * A player derives its own points from its position in the `reveal` list and
- * its own rank from its position in the `leaderboard` one, so the scoring
- * rule lives in a single client-side function. Only the host screen ever
- * shows scores next to names, and the host has those locally.
+ * A player derives the points it just won from its position in the `reveal`
+ * list. Its total and rank come from `scores`, the host's own totals, rather
+ * than from a tally of its own: a phone that slept through a reveal, or
+ * reloaded during one, would otherwise count it zero times or twice.
  */
 export interface SessionSnapshot {
   phase: Phase;
@@ -56,6 +56,10 @@ export interface SessionSnapshot {
   players: string[];
   /** Reveal only, so nobody learns the answer early. */
   correct_index?: number;
+  /** Reveal, leaderboard and finished: every player's cumulative score,
+   * including the question just revealed. Keyed by the random id, so it says
+   * nothing about who is who. */
+  scores?: Record<string, number>;
   /** Players the host removed from this session (e.g. for a rude nickname).
    * A removed player's device drops its identity and offers to join again
    * under a new name; the host ignores the old id from then on. */
@@ -84,6 +88,12 @@ export function pointsForReveal(correctPlayerIds: string[], playerId: string): n
   const rank = correctPlayerIds.indexOf(playerId);
   if (rank === -1) return 0;
   return POINTS_BY_CORRECT_RANK[rank] ?? POINTS_PER_CORRECT_ANSWER;
+}
+
+/** Standard competition ranking, as on the host's leaderboard: tied players
+ * share a rank and the next score skips ahead (1, 2, 2, 4). */
+export function rankForScore(scores: number[], score: number): number {
+  return 1 + scores.filter((other) => other > score).length;
 }
 
 export type ConnectionStatus = "open" | "reconnecting";

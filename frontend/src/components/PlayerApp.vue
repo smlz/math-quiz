@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref } from "vue";
 import {
   pointsForReveal,
+  rankForScore,
   sendMessage,
   subscribeToState,
   STALE_AFTER_MS,
@@ -52,10 +53,6 @@ const myRank = ref<number | null>(null);
 const joinPin = ref<string | undefined>();
 const joinNotice = ref<string | undefined>();
 
-// The host re-broadcasts the same reveal snapshot every few seconds, so the
-// score must only be taken from the first one seen per question.
-let scoredQuestionIndex = -1;
-
 let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
 let lastSnapshotAt = 0;
@@ -105,18 +102,15 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       break;
     case "reveal":
       revealCorrectIndex.value = snapshot.correct_index ?? null;
-      if (scoredQuestionIndex !== snapshot.question_index) {
-        scoredQuestionIndex = snapshot.question_index ?? -1;
-        lastPoints.value = pointsForReveal(snapshot.players, me);
-        myScore.value += lastPoints.value;
-        persist();
-      }
+      // Recomputed from every repeat of the snapshot rather than added up:
+      // a repeat, a reload or a missed reveal cannot skew anything.
+      lastPoints.value = pointsForReveal(snapshot.players, me);
+      applyScores(snapshot.scores, me);
       status.value = "reveal";
       break;
     case "leaderboard":
     case "finished": {
-      const position = snapshot.players.indexOf(me);
-      myRank.value = position === -1 ? null : position + 1;
+      applyScores(snapshot.scores, me);
       if (listed) joinAcknowledged.value = true;
       status.value = snapshot.phase;
       if (snapshot.phase === "finished") {
@@ -129,8 +123,19 @@ function handleSnapshot(snapshot: SessionSnapshot) {
   }
 }
 
-// The score and the player's own choice are the only state nobody else keeps
-// for us, so they have to survive a reload locally.
+/** Total and rank are the host's numbers, taken as they come. A snapshot
+ * without them (the host ending the quiz early) leaves no rank to show. */
+function applyScores(scores: Record<string, number> | undefined, me: string) {
+  if (!scores || !Object.hasOwn(scores, me)) {
+    myRank.value = null;
+    return;
+  }
+  myScore.value = scores[me];
+  myRank.value = rankForScore(Object.values(scores), scores[me]);
+}
+
+// The player's own choice is the only state nobody else keeps for us, so it
+// has to survive a reload locally.
 function persist() {
   if (!pin.value || !playerId.value || !playerToken.value || !nickname.value) return;
   savePlayerSession({
@@ -138,7 +143,6 @@ function persist() {
     playerId: playerId.value,
     playerToken: playerToken.value,
     nickname: nickname.value,
-    score: myScore.value,
     selectedIndex: selectedIndex.value,
     answeredQuestionIndex: answeredQuestionIndex.value,
   });
@@ -211,7 +215,6 @@ function leaveAfterRemoval() {
   revealCorrectIndex.value = null;
   myScore.value = 0;
   myRank.value = null;
-  scoredQuestionIndex = -1;
   status.value = "join";
 }
 
@@ -221,7 +224,6 @@ function onJoined(session: StoredPlayerSession) {
   playerId.value = session.playerId;
   playerToken.value = session.playerToken;
   nickname.value = session.nickname;
-  myScore.value = session.score;
   selectedIndex.value = session.selectedIndex;
   answeredQuestionIndex.value = session.answeredQuestionIndex;
   // Seeded so the first snapshot for the question we already answered is not

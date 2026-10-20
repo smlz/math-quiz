@@ -54,7 +54,6 @@ async function join() {
       playerId,
       playerToken,
       nickname: trimmedNickname,
-      score: 0,
       selectedIndex: null,
       answeredQuestionIndex: null,
     };

@@ -192,6 +192,11 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
   await expect(ada.locator(".player-app__total-score")).toContainText("24");
 
+  // --- Player reload during the reveal: the question must not count twice. ---
+  await ada.reload();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__total-score")).toHaveText("Gesamtpunktzahl: 24");
+
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   // The reconnect must not have added a second "Ada" to the roster.
   await expect(host.locator(".leaderboard__row")).toHaveCount(1);

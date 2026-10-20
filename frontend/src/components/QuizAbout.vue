@@ -42,14 +42,14 @@
         <dt>Was die anderen erfahren</dt>
         <dd>
           Welche Antwort jemand gewählt hat, erfährt nur der Browser der Lehrperson; am Beamer erscheint nach der
-          Auflösung bloss, wie oft jede Antwort gewählt wurde. An die Handys geht, wer schon geantwortet hat und wer
-          richtig lag — als zufällige Kennung, ohne Spitznamen.
+          Auflösung bloss, wie oft jede Antwort gewählt wurde. An die Handys geht, wer schon geantwortet hat, wer
+          richtig lag und wer wie viele Punkte hat — als zufällige Kennung, ohne Spitznamen.
         </dd>
 
         <dt>Im eigenen Browser gespeichert</dt>
         <dd>
           Damit ein Neuladen oder ein Verbindungsabbruch das Spiel nicht beendet, merkt sich der Browser das laufende
-          Spiel: auf dem Handy Spitzname, Punktestand und die eigene letzte Antwort, bei der Lehrperson das Quiz und
+          Spiel: auf dem Handy Spitzname und die eigene letzte Antwort, bei der Lehrperson das Quiz und
           den Spielstand. Diese Einträge werden gelöscht, sobald das Quiz beendet ist. Der Spitzname bleibt auf dem
           Handy als Vorschlag fürs nächste Mal.
         </dd>

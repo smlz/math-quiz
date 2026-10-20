@@ -17,7 +17,6 @@ export interface StoredPlayerSession {
   playerId: string;
   playerToken: string;
   nickname: string;
-  score: number;
   /** The player's own choice. Snapshots only say *that* someone answered,
    * never what, so a reload could not otherwise restore the locked-in pick. */
   selectedIndex: number | null;

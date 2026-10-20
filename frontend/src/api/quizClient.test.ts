@@ -1,5 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reportAfterGrace, type ConnectionStatus } from "./quizClient";
+import { rankForScore, reportAfterGrace, type ConnectionStatus } from "./quizClient";
+
+describe("rankForScore", () => {
+  const scores = [36, 22, 22, 10, 0];
+
+  it("ranks the top score first", () => {
+    expect(rankForScore(scores, 36)).toBe(1);
+  });
+
+  it("gives tied players the same rank and skips the next one", () => {
+    expect(rankForScore(scores, 22)).toBe(2);
+    expect(rankForScore(scores, 10)).toBe(4);
+  });
+
+  it("ranks everyone first when all are tied", () => {
+    expect(rankForScore([10, 10, 10], 10)).toBe(1);
+  });
+});
 
 describe("reportAfterGrace", () => {
   let seen: ConnectionStatus[];
