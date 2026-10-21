@@ -29,14 +29,14 @@ describe("resolveSourceUrl", () => {
 
   describe("gh:", () => {
     it("uses the default branch when no ref is given", () => {
-      expect(resolveSourceUrl("gh:smlz/math-quiz/typst/example-quiz.typ")).toBe(
-        "https://raw.githubusercontent.com/smlz/math-quiz/HEAD/typst/example-quiz.typ",
+      expect(resolveSourceUrl("gh:smlz/math-quiz/typst/math-quiz.typ")).toBe(
+        "https://raw.githubusercontent.com/smlz/math-quiz/HEAD/typst/math-quiz.typ",
       );
     });
 
     it("uses an explicit ref", () => {
-      expect(resolveSourceUrl("gh:smlz/math-quiz@v2/typst/example-quiz.typ")).toBe(
-        "https://raw.githubusercontent.com/smlz/math-quiz/v2/typst/example-quiz.typ",
+      expect(resolveSourceUrl("gh:smlz/math-quiz@v2/typst/math-quiz.typ")).toBe(
+        "https://raw.githubusercontent.com/smlz/math-quiz/v2/typst/math-quiz.typ",
       );
     });
 
@@ -49,22 +49,22 @@ describe("resolveSourceUrl", () => {
 
   describe("cb:", () => {
     it("uses the API, leaving out ref for the default branch", () => {
-      expect(resolveSourceUrl("cb:smlz/math-quiz/typst/example-quiz.typ")).toBe(
-        "https://codeberg.org/api/v1/repos/smlz/math-quiz/raw/typst/example-quiz.typ",
+      expect(resolveSourceUrl("cb:smlz/math-quiz/typst/math-quiz.typ")).toBe(
+        "https://codeberg.org/api/v1/repos/smlz/math-quiz/raw/typst/math-quiz.typ",
       );
     });
 
     it("passes an explicit ref as a query parameter", () => {
-      expect(resolveSourceUrl("cb:smlz/math-quiz@main/typst/example-quiz.typ")).toBe(
-        "https://codeberg.org/api/v1/repos/smlz/math-quiz/raw/typst/example-quiz.typ?ref=main",
+      expect(resolveSourceUrl("cb:smlz/math-quiz@main/typst/math-quiz.typ")).toBe(
+        "https://codeberg.org/api/v1/repos/smlz/math-quiz/raw/typst/math-quiz.typ?ref=main",
       );
     });
   });
 
   describe("gl:", () => {
     it("encodes project and file path as single segments", () => {
-      expect(resolveSourceUrl("gl:smlz/math-quiz/typst/example-quiz.typ")).toBe(
-        "https://gitlab.com/api/v4/projects/smlz%2Fmath-quiz/repository/files/typst%2Fexample-quiz.typ/raw?ref=HEAD",
+      expect(resolveSourceUrl("gl:smlz/math-quiz/typst/math-quiz.typ")).toBe(
+        "https://gitlab.com/api/v4/projects/smlz%2Fmath-quiz/repository/files/typst%2Fmath-quiz.typ/raw?ref=HEAD",
       );
     });
 

@@ -71,14 +71,14 @@ test("the image example in typst/ renders in full", async ({ page }) => {
   // The example linked from typst/README.md, served exactly as it lies in the repo.
   const typstDir = fileURLToPath(new URL("../../typst", import.meta.url));
   const files: Record<string, { body: string | Buffer; contentType: string }> = {
-    "/typst/quiz-bilder.typ": { body: readFileSync(join(typstDir, "quiz-bilder.typ"), "utf-8"), contentType: "text/plain" },
+    "/typst/images-quiz.typ": { body: readFileSync(join(typstDir, "images-quiz.typ"), "utf-8"), contentType: "text/plain" },
   };
-  for (const name of readdirSync(join(typstDir, "bilder"))) {
-    files[`/typst/bilder/${name}`] = { body: readFileSync(join(typstDir, "bilder", name)), contentType: "image/svg+xml" };
+  for (const name of readdirSync(join(typstDir, "images"))) {
+    files[`/typst/images/${name}`] = { body: readFileSync(join(typstDir, "images", name)), contentType: "image/svg+xml" };
   }
   await serveRepo(page, files);
 
-  await page.goto(`/create?src=${encodeURIComponent(`${ORIGIN}/typst/quiz-bilder.typ`)}`);
+  await page.goto(`/create?src=${encodeURIComponent(`${ORIGIN}/typst/images-quiz.typ`)}`);
 
   await expect.poll(async () => (await imageHrefs(page, ".host-app__preview")).length).toBe(7);
   await expect(page.locator(".typst-figure__error")).toHaveCount(0);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted } from "vue";
 import QuizDocExample from "./QuizDocExample.vue";
-import { QUIZ_TEMPLATE, STARTER_QUIZ } from "../quiz/sampleQuiz";
+import { MINIMAL_QUIZ, QUIZ_TEMPLATE } from "../quiz/sampleQuiz";
 
 // Every example below is only the `#question(...)` call; the header (and any
 // imports/macros it needs) is passed as a hidden prelude so the listing stays
@@ -104,18 +104,18 @@ function downloadUrl(content: string): string {
 }
 
 const templateUrl = downloadUrl(QUIZ_TEMPLATE);
-const starterUrl = downloadUrl(STARTER_QUIZ);
+const starterUrl = downloadUrl(MINIMAL_QUIZ);
 
 onUnmounted(() => {
   URL.revokeObjectURL(templateUrl);
   URL.revokeObjectURL(starterUrl);
 });
 
-const EXAMPLE_LINK = `${location.origin}/create?src=gh:smlz/math-quiz/typst/example-quiz.typ`;
+const EXAMPLE_LINK = `${location.origin}/create?src=gh:smlz/math-quiz/typst/math-quiz.typ`;
 
 const LINK_FORMS: { form: string; example: string }[] = [
   { form: "https://…", example: "https://example.com/quizze/mengen.typ" },
-  { form: "gh:besitzer/repo/pfad", example: "gh:smlz/math-quiz/typst/example-quiz.typ" },
+  { form: "gh:besitzer/repo/pfad", example: "gh:smlz/math-quiz/typst/math-quiz.typ" },
   { form: "gl:besitzer/repo/pfad", example: "gl:muster/quizze/mengen.typ" },
   { form: "cb:besitzer/repo/pfad", example: "cb:muster/quizze@v2/mengen.typ" },
 ];
@@ -299,7 +299,7 @@ const ERRORS: { message: string; cause: string }[] = [
         Seite <a href="/create">Quiz erstellen</a> einfügen — oder die Datei online stellen und <a href="#link">per Link laden</a>.
       </p>
       <QuizDocExample
-        :source="STARTER_QUIZ"
+        :source="MINIMAL_QUIZ"
         prelude=""
         caption="So sieht die Startdatei auf dem Beamer aus."
       />
@@ -318,7 +318,7 @@ const ERRORS: { message: string; cause: string }[] = [
       <p>
         Für Dateien auf GitHub, GitLab und Codeberg gibt es Kurzformen. Sie laden die Datei vom Standard-Branch;
         ein anderer Branch, Tag oder Commit folgt mit <code>@</code> auf den Repository-Namen, z. B.
-        <code>gh:smlz/math-quiz@main/typst/example-quiz.typ</code>.
+        <code>gh:smlz/math-quiz@main/typst/math-quiz.typ</code>.
       </p>
       <table class="quiz-docs__table">
         <thead>

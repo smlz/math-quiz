@@ -121,7 +121,7 @@ export default defineConfig({
   },
   server: {
     fs: {
-      // `typst/` (the quiz template and example quiz) lives at the repo root
+      // `typst/` (the quiz template and sample quizzes) lives at the repo root
       // and is imported with `?raw`, so the dev server must be able to read it.
       allow: ['..'],
     },

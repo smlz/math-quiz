@@ -23,7 +23,7 @@ import { OPTION_LABELS } from "../quiz/optionStyle";
 import { cleanNickname } from "../quiz/nickname";
 import { parseQuiz } from "../quiz/parseQuiz";
 import { fetchQuizSource, resolveSource, type SourceLocation } from "../quiz/remoteSource";
-import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
+import { MINIMAL_QUIZ } from "../quiz/sampleQuiz";
 import { loadQuizImages, renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
 import { attachSound, playCheer, playFinale, playMusic, settleCheer, stopCheer, stopSound } from "../sound/hostSound";
@@ -53,8 +53,8 @@ type Status = "setup" | Phase;
 
 startDebugLog("host");
 
-// A `?src=` link (SPEC.md §3.5) replaces the sample quiz; the editor starts
-// empty rather than briefly showing the sample while the file loads.
+// A `?src=` link (SPEC.md §3.5) replaces the minimal quiz; the editor starts
+// empty rather than briefly showing it while the file loads.
 const remoteSource = new URLSearchParams(location.search).get("src");
 const remoteLoading = ref(false);
 const remoteLoaded = ref(false);
@@ -65,7 +65,7 @@ const remoteError = ref<string | null>(null);
 let quizSrc: string | null = null;
 let quizLocation: SourceLocation | null = null;
 
-const quizSource = ref(remoteSource ? "" : SAMPLE_QUIZ);
+const quizSource = ref(remoteSource ? "" : MINIMAL_QUIZ);
 const loadErrors = ref<string[]>([]);
 const quiz = ref<ParsedQuiz | null>(null);
 // Set while "Quiz erstellen" is busy: first every prompt/option is compiled

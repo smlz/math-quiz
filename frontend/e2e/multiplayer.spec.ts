@@ -1,12 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loadMathQuiz } from "./mathQuiz";
 
 // Full 3-question, 2-player game driven through real browser tabs (SPEC.md
 // §12.2 step 6), covering the whole host+player UI flow (setup -> lobby ->
 // question -> reveal -> leaderboard, three times -> finish).
 //
-// Uses the SAMPLE_QUIZ from frontend/src/quiz/sampleQuiz.ts, prefilled by
-// default on the host setup screen: Q1 correct_answer is C (index 2), Q2
-// correct_answer is B (index 1), Q3 correct_answer is A (index 0).
+// Uses typst/math-quiz.typ where three questions are needed, otherwise the
+// quiz prefilled on the host setup screen (typst/minimal-quiz.typ). In both,
+// Q1 correct_answer is C (index 2) and Q2 correct_answer is B (index 1); in the
+// math quiz, Q3 correct_answer is A (index 0).
 
 async function answerOption(page: Page, optionIndex: number) {
   await page.locator(".player-answer-grid__option").nth(optionIndex).click();
@@ -22,6 +24,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
 
   await host.goto("/create");
   await expect(host.getByRole("heading", { name: "Quiz-Quelltext (Typst)" })).toBeVisible();
+  await loadMathQuiz(host);
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
 
   const pin = await host.locator(".host-lobby__pin").textContent();
@@ -170,6 +173,7 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   let ada = await adaContext.newPage();
 
   await host.goto("/create");
+  await loadMathQuiz(host);
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = await host.locator(".host-lobby__pin").textContent();
 

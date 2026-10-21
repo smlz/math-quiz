@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loadMathQuiz } from "./mathQuiz";
 
 // What the host screen plays and when (src/sound/hostSound.ts). Headless
 // Chromium has no speakers, so the Web Audio calls themselves are recorded:
@@ -103,6 +104,7 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
   await player.addInitScript(recordSound);
 
   await host.goto("/create");
+  await loadMathQuiz(host);
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = await host.locator(".host-lobby__pin").textContent();
 
@@ -143,7 +145,7 @@ test("the host plays a tune through the quiz, cheers for the leaderboard and app
   await host.getByRole("button", { name: "Frage starten" }).click();
   await expect.poll(() => soundLog(host)).toEqual(["context", "start music-happy-vibes loop"]);
 
-  // The sample quiz: C, B, A are correct. The tune plays on without restarting.
+  // The math quiz: C, B, A are correct. The tune plays on without restarting.
   const count = async (event: string) => (await soundLog(host)).filter((e) => e === event).length;
   for (const [question, correct] of [2, 1, 0].entries()) {
     await expect(player.locator(".player-answer-grid__option")).toHaveCount(4);
