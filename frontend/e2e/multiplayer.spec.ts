@@ -98,9 +98,20 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
   await expect(bo.getByText("Du hast auf Platz 2 mit 11 Punkten abgeschlossen")).toBeVisible();
 
+  // --- A join after the end is turned away rather than ranked last. ---
+  const lateContext = await browser.newContext();
+  const late = await lateContext.newPage();
+  await late.goto(`/?pin=${pin}`);
+  await late.getByLabel("Nickname").fill("Cy");
+  await late.getByRole("button", { name: "Beitreten" }).click();
+  await expect(late.getByRole("heading", { name: "Quiz beendet!" })).toBeVisible();
+  await expect(late.getByText(/Du hast auf Platz/)).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
   await hostContext.close();
   await adaContext.close();
   await boContext.close();
+  await lateContext.close();
 });
 
 test("the leaderboard animates from the old standings into the new ones", async ({ browser }) => {

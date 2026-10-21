@@ -342,6 +342,9 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     // Not logged: during a question a player's join stays unconfirmed, and
     // is repeated every few seconds, until its answer lands (see PlayerApp).
     if (roster.has(player_id)) return;
+    // A device that cleared its session at the end and joins again would
+    // otherwise be listed a second time, with no points and a last place.
+    if (status.value === "finished") return ignore("quiz finished");
     if (roster.size >= MAX_PLAYERS) return ignore("roster full");
     if (typeof payload.nickname !== "string") return ignore("no nickname");
     const nickname = cleanNickname(payload.nickname, roster.values());

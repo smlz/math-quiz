@@ -267,7 +267,10 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
 5. Host clicks "Next" to loop back to step 2, or "Finish" after the last
    question to show the final leaderboard. The final screen keeps
    broadcasting like every other phase, so a phone that was asleep at that
-   moment still gets its final rank. Only the host's "End quiz" button on
+   moment still gets its final rank. Joins are ignored from here on: a
+   device that already cleared its session (see §4.3) and joins again sees
+   "quiz over" without a rank instead of a second, last-placed entry. Only
+   the host's "End quiz" button on
    the final screen stops the broadcasts, releases the pin and returns the
    host to the setup screen.
 
