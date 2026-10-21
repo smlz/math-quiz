@@ -22,9 +22,9 @@ import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { cleanNickname } from "../quiz/nickname";
 import { parseQuiz } from "../quiz/parseQuiz";
-import { fetchQuizSource } from "../quiz/remoteSource";
+import { fetchQuizSource, resolveSource, type SourceLocation } from "../quiz/remoteSource";
 import { SAMPLE_QUIZ } from "../quiz/sampleQuiz";
-import { renderTypst } from "../quiz/typst";
+import { loadQuizImages, renderTypst } from "../quiz/typst";
 import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
 import { attachSound, playCheer, playFinale, playMusic, settleCheer, stopCheer, stopSound } from "../sound/hostSound";
 import AppFooter from "./AppFooter.vue";
@@ -59,6 +59,11 @@ const remoteSource = new URLSearchParams(location.search).get("src");
 const remoteLoading = ref(false);
 const remoteLoaded = ref(false);
 const remoteError = ref<string | null>(null);
+// Where the quiz in the editor came from, if it came from a link: its images
+// are fetched relative to that file (SPEC.md §3.5). It sticks for the whole
+// page, edits included, and a resumed session brings its own.
+let quizSrc: string | null = null;
+let quizLocation: SourceLocation | null = null;
 
 const quizSource = ref(remoteSource ? "" : SAMPLE_QUIZ);
 const loadErrors = ref<string[]>([]);
@@ -92,6 +97,8 @@ watch(
         previewErrors.value = [];
         return;
       }
+      // Queued ahead of the preview's renders, which therefore see the images.
+      void loadQuizImages(source, quizLocation);
       try {
         previewQuiz.value = parseQuiz(source);
         previewErrors.value = [];
@@ -230,6 +237,8 @@ async function loadAndCreateSession() {
   }
 
   creating.value = "validating";
+  // The preview may not have caught up with the last edit yet.
+  await loadQuizImages(quizSource.value, quizLocation);
   const typstErrors = await compileAllTypstSnippets(quiz.value);
   if (typstErrors.length) {
     creating.value = null;
@@ -428,6 +437,7 @@ function persistSession() {
     pin: pin.value,
     hostToken: hostToken.value,
     quizSource: quizSource.value,
+    quizSrc: quizSrc ?? undefined,
     status: status.value,
     currentQuestionIndex: currentQuestionIndex.value,
     roster: [...roster],
@@ -462,6 +472,12 @@ if (restored?.hostToken) {
   try {
     quiz.value = parseQuiz(restored.quizSource);
     quizSource.value = restored.quizSource;
+    if (restored.quizSrc) {
+      quizSrc = restored.quizSrc;
+      quizLocation = resolveSource(restored.quizSrc);
+    }
+    // Before the current question mounts, so its figures wait for the images.
+    void loadQuizImages(restored.quizSource, quizLocation);
     pin.value = restored.pin;
     hostToken.value = restored.hostToken;
     currentQuestionIndex.value = restored.currentQuestionIndex;
@@ -490,7 +506,11 @@ if (restored?.hostToken) {
 async function loadRemoteSource(src: string) {
   remoteLoading.value = true;
   try {
-    quizSource.value = await fetchQuizSource(src);
+    const source = await fetchQuizSource(src);
+    // Set before the editor changes, so the preview fetches the images.
+    quizSrc = src;
+    quizLocation = resolveSource(src);
+    quizSource.value = source;
     remoteLoaded.value = true;
   } catch (e) {
     remoteError.value = e instanceof Error ? e.message : String(e);

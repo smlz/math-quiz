@@ -27,6 +27,9 @@ export interface StoredHostSession {
   pin: string;
   hostToken: string;
   quizSource: string;
+  /** The `?src=` link the quiz was loaded from, so its images can be
+   * fetched again after a reload. Absent for a pasted quiz. */
+  quizSrc?: string;
   status: string;
   currentQuestionIndex: number;
   roster: [string, string][];

@@ -23,9 +23,23 @@ const SHORTCUT_PATH = /^([^/@]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/;
 
 export class RemoteSourceError extends Error {}
 
-/** Turns a `?src=` value — a plain https:// URL or a `gh:`/`cb:`/`gl:`
- * shortcut — into the URL to fetch. */
-export function resolveSourceUrl(src: string): string {
+/** Where a quiz file lives, so files next to it (images, SPEC.md §3.5) can be
+ * fetched too. Paths are absolute within the file's root -- the repository
+ * for a shortcut, the origin for an https:// URL -- just like the paths Typst
+ * itself resolves, which keeps relative references working for every forge. */
+export interface SourceLocation {
+  /** The URL the quiz file itself is fetched from. */
+  url: string;
+  /** The quiz file's path within its root, starting with "/". */
+  path: string;
+  /** The URL to fetch another file in the same root (same repo and ref, or
+   * same origin) from. */
+  urlFor(path: string): string;
+}
+
+/** Resolves a `?src=` value — a plain https:// URL or a `gh:`/`cb:`/`gl:`
+ * shortcut — to the quiz file's location. */
+export function resolveSource(src: string): SourceLocation {
   const trimmed = src.trim();
   const shortcut = /^([a-z]+):(?!\/\/)(.*)$/.exec(trimmed);
   if (shortcut && shortcut[1] in SHORTCUTS) {
@@ -37,7 +51,10 @@ export function resolveSourceUrl(src: string): string {
       );
     }
     const [, owner, repo, ref, path] = match;
-    return SHORTCUTS[shortcut[1]](owner, repo, ref, path);
+    const resolver = SHORTCUTS[shortcut[1]];
+    const urlFor = (filePath: string) => resolver(owner, repo, ref, filePath.replace(/^\/+/, ""));
+    const absolute = "/" + path.replace(/^\/+/, "");
+    return { url: urlFor(absolute), path: absolute, urlFor };
   }
 
   let url: URL;
@@ -49,7 +66,27 @@ export function resolveSourceUrl(src: string): string {
   if (url.protocol !== "https:") {
     throw new RemoteSourceError(`Nur https://-Adressen werden unterstützt, nicht «${url.protocol}»`);
   }
-  return url.href;
+  const origin = url.origin;
+  return { url: url.href, path: decodePath(url.pathname), urlFor: (filePath) => origin + encodePath(filePath) };
+}
+
+/** A URL's pathname as Typst sees it: "%20" is a space in a file name. */
+function decodePath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join("/");
+}
+
+/** Turns a `?src=` value into the URL to fetch. */
+export function resolveSourceUrl(src: string): string {
+  return resolveSource(src).url;
 }
 
 export async function fetchQuizSource(src: string): Promise<string> {

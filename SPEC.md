@@ -203,6 +203,27 @@ shortcuts map to endpoints that do:
 Without `@ref` the default branch is used. A ref can't contain `/`, and
 GitLab subgroups aren't expressible as a shortcut.
 
+**Images.** A quiz loaded from a link may use images stored next to it
+(`#image("img/kreis.svg")`). Typst reads files synchronously inside its WASM
+compiler, so they can't be fetched on demand: the source is scanned for
+`image("…")` calls with a literal path, each file is fetched from the same
+root as the quiz — the same repo and ref for a shortcut, the same origin for
+an `https://` URL — and mapped into the compiler's virtual file system before
+anything is compiled. Paths resolve as in Typst itself: relative to the quiz
+file, or from the root with a leading `/`, and `..` never leaves the root.
+Each snippet is compiled as a file in the quiz file's directory, so that
+resolution matches compiling the file locally.
+
+- Image fetches need CORS headers too, and send no credentials. A quiz can
+  load at most 50 images of at most 10 MB each.
+- A missing image fails the snippet that uses it like any other compile
+  error, with the fetch's reason (e.g. `HTTP 404`) added to the message.
+- A path built at compile time (`image(name + ".png")`) isn't found by the
+  scan and fails as a missing file.
+- A pasted quiz has no location, so it can't use images.
+- The link is kept with the resumed session (§4.3), so the images are fetched
+  again after a reload.
+
 ## 4. Game flow
 
 ### 4.1 Session lifecycle

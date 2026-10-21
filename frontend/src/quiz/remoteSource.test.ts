@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchQuizSource, RemoteSourceError, resolveSourceUrl } from "./remoteSource";
+import { fetchQuizSource, RemoteSourceError, resolveSource, resolveSourceUrl } from "./remoteSource";
 
 describe("resolveSourceUrl", () => {
   it("passes plain https URLs through", () => {
@@ -73,6 +73,31 @@ describe("resolveSourceUrl", () => {
         "https://gitlab.com/api/v4/projects/smlz%2Fmath-quiz/repository/files/q.typ/raw?ref=v2",
       );
     });
+  });
+});
+
+describe("resolveSource", () => {
+  it("gives a shortcut's file its path in the repo", () => {
+    expect(resolveSource("gh:o/r@v2/typst/q.typ").path).toBe("/typst/q.typ");
+  });
+
+  it("fetches other files from the same repo and ref", () => {
+    expect(resolveSource("gh:o/r@v2/typst/q.typ").urlFor("/img/Bild 1.png")).toBe(
+      "https://raw.githubusercontent.com/o/r/v2/img/Bild%201.png",
+    );
+    expect(resolveSource("cb:o/r@main/q.typ").urlFor("/img/a.png")).toBe(
+      "https://codeberg.org/api/v1/repos/o/r/raw/img/a.png?ref=main",
+    );
+    expect(resolveSource("gl:o/r/q.typ").urlFor("/img/a.png")).toBe(
+      "https://gitlab.com/api/v4/projects/o%2Fr/repository/files/img%2Fa.png/raw?ref=HEAD",
+    );
+  });
+
+  it("roots an https:// URL at its origin, decoding the path", () => {
+    const location = resolveSource("https://example.com/Quiz%201/q.typ?x=1");
+    expect(location.url).toBe("https://example.com/Quiz%201/q.typ?x=1");
+    expect(location.path).toBe("/Quiz 1/q.typ");
+    expect(location.urlFor("/Quiz 1/a.png")).toBe("https://example.com/Quiz%201/a.png");
   });
 });
 

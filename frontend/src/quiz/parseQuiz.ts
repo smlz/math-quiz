@@ -270,7 +270,7 @@ function skipTrivia(source: string, i: number, inMarkup: boolean): number {
   return i;
 }
 
-function stripComments(source: string): string {
+export function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 

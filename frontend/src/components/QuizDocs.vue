@@ -214,6 +214,7 @@ const ERRORS: { message: string; cause: string }[] = [
       <a href="#aufbau">Aufbau</a>
       <a href="#vorlage">Vorlage herunterladen</a>
       <a href="#link">Quiz per Link laden</a>
+      <a href="#bilder">Bilder</a>
       <a href="#beispiel-mengen">Beispiel: Mengen</a>
       <a href="#antwortflaeche">answer-area-fraction</a>
       <a href="#beispiel-graph">Beispiel: Graph</a>
@@ -338,6 +339,20 @@ const ERRORS: { message: string; cause: string }[] = [
         Ausserdem muss der Server das Laden von fremden Seiten erlauben (CORS) — viele Server tun das nicht. Für
         GitHub, GitLab und Codeberg deshalb immer die Kurzform verwenden: Deren «Raw»-Links funktionieren nicht
         überall. GitLab-Projekte in Untergruppen werden von der Kurzform nicht unterstützt.
+      </p>
+    </section>
+
+    <section id="bilder">
+      <h2>Bilder</h2>
+      <p>
+        Eine per Link geladene Quiz-Datei kann Bilder verwenden, die neben ihr im selben Repository bzw. auf demselben
+        Server liegen, z. B. <code>#image("bilder/kreis.svg", width: 4cm)</code>. Der Pfad gilt wie in Typst relativ zur
+        Quiz-Datei; mit <code>/</code> am Anfang ab dem Hauptordner des Repositorys. PNG, JPG, GIF und SVG funktionieren.
+      </p>
+      <p class="quiz-docs__note">
+        Der Pfad muss direkt in Anführungszeichen stehen — einen zusammengesetzten Pfad wie
+        <code>image(name + ".png")</code> findet die App nicht. In eingefügten Quiz-Dateien gehen keine Bilder, weil die
+        App nicht weiss, wo sie liegen. Höchstens 50 Bilder zu je 10 MB.
       </p>
     </section>
 
