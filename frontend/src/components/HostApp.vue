@@ -77,7 +77,7 @@ const creating = ref<"validating" | "connecting" | null>(null);
 const creatingLabel = computed(() =>
   creating.value === "validating"
     ? "Quiz wird geprüft …"
-    : "Verbindung zum Server wird aufgebaut … (kann beim ersten Start etwas dauern)",
+    : "Verbindung zum Server wird aufgebaut …",
 );
 
 // Separate from `quiz` so a half-typed draft in the editor never disturbs
