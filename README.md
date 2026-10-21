@@ -3,44 +3,34 @@
 [![CI](https://github.com/smlz/math-quiz/actions/workflows/ci.yml/badge.svg)](https://github.com/smlz/math-quiz/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-A live quiz app for maths lessons. A **host** runs the game on a shared screen
-(projector); **players** join from their own devices with a 6-digit PIN or by
+A minimalistic live quiz app (not only) for math lessons, designed for
+_simplicity_ and _privacy_. A _host_ runs the game on a shared screen
+(projector); _players_ join from their own devices with a 6-digit PIN or by
 scanning a QR code.
 
-Question prompts and answer options are authored as **Typst** source and
-rendered in the browser via [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)
-(WASM) — plain text, math and figures (`cetz`) all use the same syntax.
-Player devices only ever show four colored A/B/C/D buttons; the question
-itself is read off the host screen.
+Question prompts and answer options are authored as _Typst_ source and
+rendered in the browser via
+[typst.ts](https://github.com/Myriad-Dreamin/typst.ts) — plain text, math and
+figures all use the same syntax. Player devices only ever show four colored
+A/B/C/D buttons; the question and its answer options are read off the host
+screen. There is one question type: multiple choice with exactly four options.
+
+There is no login, no tracking, no ads, no analytics, no telemetry, no
+cookies, no social media buttons. Only the host screen loads external scripts
+(to render _Typst_); player devices load nothing from third parties. The
+server stores no game data; its access logs are deleted after one day.
 
 The full design is documented in [SPEC.md](SPEC.md); the quiz file format is
 described in [§3](SPEC.md#3-question-authoring).
 
-The app is designed for _simplicity_ and _privacy_ (see [Privacy](#privacy)).
-
-Even though carefully designed, this app is mostly vibe coded. Use at your own
+Although carefully designed, the app is mostly vibe-coded. Use at your own
 risk!
-
-## Privacy
-
-- There are no accounts. Players only choose a nickname, which the host
-  screen shows in the lobby and on the leaderboard.
-- The whole game runs in the host's browser; the server only passes messages
-  between host and players without inspecting them. The server stores
-  nothing, and its access logs are deleted after one day.
-- So that a reload or a dropped connection doesn't lose the game, the browser
-  keeps the current session (and the player's nickname) in `localStorage`.
-- The host page loads the Typst compiler, its fonts and packages from
-  jsDelivr and packages.typst.org. Player devices load nothing from third
-  parties.
-- There are no ads, no analytics, no tracking, no telemetry, no cookies, no
-  social media buttons, no external scripts.
 
 ## Architecture
 
 | Part | Location | Notes |
 |------|----------|-------|
-| Backend | [quiz_relay_api.py](quiz_relay_api.py) | A stateless FastAPI message relay.  It stores nothing, only relays opaque JSON. No database.|
+| Backend | [quiz_relay_api.py](quiz_relay_api.py) | A stateless FastAPI message relay that only passes opaque JSON along. No database.|
 | Frontend | [frontend/](frontend) | Vue 3 (Composition API) + Vite + TypeScript.|
 
 ## Prerequisites
@@ -50,7 +40,7 @@ risk!
 
 ## Running in dev mode
 
-Two processes, in two terminals, both needed.
+You need two processes running in separate terminals.
 
 **1. Backend** (from the repo root, serves on `http://127.0.0.1:8000`):
 
@@ -73,7 +63,7 @@ npm run dev
 
 Vite proxies `/api` to the backend, so open only the Vite URL in the browser.
 Players join at `/` (the lobby's QR code links there with the PIN
-prefilled), the host screen is at `/create`.
+prefilled); the host screen is at `/create`.
 
 ## Building
 
@@ -88,7 +78,7 @@ with any ASGI server, e.g. `uvicorn quiz_relay_api:app`.
 
 The [CI workflow](.github/workflows/ci.yml) runs the full test suite on every
 push to `main`. Pushing a version tag (`v` plus the version in
-`pyproject.toml`, e.g. `v1.0.8`) also deploys, once the tests have passed.
+`pyproject.toml`, e.g. `v1.0.8`) also triggers a deploy once the tests pass.
 
 ## Running tests
 
@@ -130,7 +120,6 @@ so no servers need to be running beforehand.
 AGPLv3 — see [LICENSE](LICENSE).
 
 The music and crowd sounds on the host screen are CC0 (public domain), except
-“C64 Happy Loop” by Emma Andersson (Emma_MA), which is CC BY 4.0. Where they
-all come from is listed in
-[frontend/public/audio/CREDITS.md](frontend/public/audio/CREDITS.md), which the
-app's footer links to.
+“C64 Happy Loop” by Emma Andersson (Emma_MA), which is CC BY 4.0. Their
+sources are listed in
+[frontend/public/audio/CREDITS.md](frontend/public/audio/CREDITS.md).
