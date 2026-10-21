@@ -31,7 +31,7 @@ const APPLAUSE = clip("final-applause");
 
 // The clips are levelled against each other (music at -18 LUFS, cheers at
 // -22, the applause at -14), so these only set the overall balance.
-const MUSIC_VOLUME = 0.7;
+const MUSIC_VOLUME = 0.2;
 const EFFECT_VOLUME = 1;
 // Seconds.
 const STOP_FADE = 0.4;
