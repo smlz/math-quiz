@@ -205,8 +205,7 @@ const ERRORS: { message: string; cause: string }[] = [
         so, wie sie später auf dem Beamer aussieht.
       </p>
       <p class="quiz-docs__lead quiz-docs__note">
-        Was mit den Daten geschieht und was die App nicht kann, steht unter
-        <a href="/about">Datenschutz &amp; Grenzen</a>.
+        Was mit den Daten geschieht beziehungsweise nicht geschieht, steht unter <a href="/about">Datenschutz</a>.
       </p>
     </header>
 

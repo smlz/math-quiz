@@ -32,6 +32,6 @@ test("the players' privacy link stays on the site and loads nothing from third p
   await about.reload({ waitUntil: "networkidle" });
 
   await expect(about).toHaveURL("/about");
-  await expect(about.getByRole("heading", { name: "Datenschutz & Grenzen" })).toBeVisible();
+  await expect(about.getByRole("heading", { name: "Datenschutz" })).toBeVisible();
   expect(foreign).toEqual([]);
 });

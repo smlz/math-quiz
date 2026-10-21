@@ -31,9 +31,7 @@ const soundCreditsHref = `${SOURCE_URL}/blob/${ref ?? "main"}/frontend/public/au
         </a>
       </li>
       <li><a :href="`${SOURCE_URL}/blob/main/LICENSE`" target="_blank" rel="noopener">Lizenz</a></li>
-      <li>
-        <a href="/about" target="_blank" rel="noopener">Datenschutz<template v-if="!compact"> &amp; Grenzen</template></a>
-      </li>
+      <li><a href="/about" target="_blank" rel="noopener">Datenschutz</a></li>
       <template v-if="!compact">
         <li><a href="/debug" target="_blank" rel="noopener">Diagnose</a></li>
         <li><a :href="`${SOURCE_URL}/issues`" target="_blank" rel="noopener">Feedback</a></li>
