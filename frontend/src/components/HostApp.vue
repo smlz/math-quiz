@@ -222,6 +222,12 @@ function createSessionErrorMessage(error: unknown): string {
   if (error instanceof RelayError && error.status === 503) {
     return "Gerade sind alle Spiel-PINs vergeben. Bitte versuche es in ein paar Minuten noch einmal.";
   }
+  // 429: this network (usually the whole school) has started too many
+  // quizzes in a short time. One more is allowed every minute, so the wait
+  // is never longer than that.
+  if (error instanceof RelayError && error.status === 429) {
+    return "Von diesem Netzwerk aus wurden in kurzer Zeit zu viele Quiz gestartet. Bitte versuche es in etwa einer Minute noch einmal.";
+  }
   return "Das Quiz konnte nicht gestartet werden, weil der Server nicht erreichbar ist. Bitte versuche es später noch einmal.";
 }
 

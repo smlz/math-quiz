@@ -533,7 +533,13 @@ connected to it, so two live hosts can never share a topic. Both the number
 of draws and the number of live sessions (100 000, a tenth of the pin space)
 are capped; past either, creating a session fails with `503` rather than
 redrawing forever, which would block the event loop and stall every running
-session. A host token is
+session. So that a single client cannot fill that cap and lock everyone out
+for a day, `POST /api/v1/session` is rate-limited per client address: a
+burst of 100, then one more per minute, beyond which it answers `429` with
+`Retry-After`. The address is Cloudflare's `CF-Connecting-IP` header (a
+whole `/64` for IPv6). It is not `request.client`, because the platform's
+uvicorn trusts `X-Forwarded-For` from anyone. Nothing else is rate-limited.
+A host token is
 only accepted for the session that currently holds its pin; after a restart
 the map is empty, and the first valid, unexpired host token seen for a pin
 claims it again. `DELETE /api/v1/session/{pin}` releases the pin when the
@@ -670,7 +676,8 @@ purges the whole map.
   question's options, and the roster is capped at 200 players.
 - Accepted risks, given 25 pupils in one room: anyone who knows the pin can
   read the state stream and mint a player token, so a determined student
-  could spam the host's inbox. There is no rate limiting.
+  could spam the host's inbox. Only creating sessions is rate-limited (§7).
+  Players are not, since a whole school shares one public address.
 
 ## 10. Out of scope for v1 (future extensions)
 
@@ -852,7 +859,8 @@ no state at all (§6.1).
 - The backend never parses message payloads; they are opaque JSON.
 - Failures are visible: both roles show a "reconnecting" banner rather than
   healing silently, so it is known whether this happens in practice.
-- Out of scope: disconnect/presence detection, rate limiting, non-idempotent
+- Out of scope: disconnect/presence detection, rate limiting beyond session
+  creation, non-idempotent
   one-shot effects, replay as a latency optimisation (§10).
 
 An earlier proof-of-concept sketch — a multi-threaded `wau` backend using

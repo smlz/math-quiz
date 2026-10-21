@@ -9,7 +9,7 @@ keeps no state at all:
     secret, so it can be verified after the process has forgotten everything,
   - the two per-session topics exist only as long as someone is subscribed.
 
-The single exception is the map of pins currently in use to the session that
+The main exception is the map of pins currently in use to the session that
 holds them. It keeps two concurrent hosts from being handed the same pin, and
 it is what stops a host token from outliving its session: pins are only six
 digits and get reused, so a token signed over the pin alone would also unlock
@@ -18,7 +18,12 @@ quiz finishes, and a restart or scale-to-zero purges whatever was left
 dangling -- the first valid host token seen for a pin afterwards claims it
 again (see `_require_host`).
 
-Because of that, a restart or a scale-to-zero cold start needs no recovery
+Pins are a finite resource, so the other exception is a per-address rate
+limit on creating sessions (see `_take_create_token`). It forgets an address
+as soon as its allowance has refilled, and a restart that wipes it only hands
+everyone a fresh allowance.
+
+Because of all that, a restart or a scale-to-zero cold start needs no recovery
 endpoint. Participants reconnect, the host's next state broadcast arrives,
 and everyone is up to date again.
 
@@ -51,7 +56,9 @@ import collections
 import contextlib
 import hashlib
 import hmac
+import ipaddress
 import json
+import math
 import os
 import pathlib
 import secrets
@@ -59,7 +66,7 @@ import time
 import tomllib
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, FastAPI, Header, HTTPException, Path
+from fastapi import APIRouter, FastAPI, Header, HTTPException, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -77,6 +84,26 @@ PIN_PATTERN = r"^\d{6}$"
 # every running session along with it.
 MAX_LIVE_SESSIONS = 100_000
 MAX_PIN_DRAWS = 50
+
+# Without a per-client limit, one script could fill MAX_LIVE_SESSIONS and
+# lock every teacher out until the reservations expire a day later. Each
+# client address gets a token bucket: a burst of CREATE_BURST sessions, then
+# one more every CREATE_REFILL_SECONDS. A whole school shares one public
+# address, so the burst is generous; at this rate it still takes some 65
+# addresses a full day to reach the cap.
+CREATE_BURST = 100
+CREATE_REFILL_SECONDS = 60
+# Bounds the bucket map when requests come from very many addresses. Evicting
+# the stalest bucket only hands that address a fresh burst.
+MAX_TRACKED_CLIENTS = 100_000
+# Requests pass Cloudflare, then the platform's Istio gateway and a Knative
+# proxy. Cloudflare sets this header to the address it accepted the
+# connection from and refuses requests that bring their own, so it is the one
+# address a client cannot choose. `request.client` is no use: the platform
+# runs uvicorn with FORWARDED_ALLOW_IPS=*, which makes it the leftmost
+# X-Forwarded-For entry -- whatever the client put there. A request without
+# the header (local dev, tests) counts against a single shared bucket.
+CLIENT_IP_HEADER = "CF-Connecting-IP"
 
 # urlsafe-b64 of a SHA-256 digest, minus padding.
 _SIGNATURE_LENGTH = 43
@@ -253,6 +280,49 @@ fanout = Fanout()
 live_sessions: dict[str, tuple[str, int]] = {}
 
 
+# Client key -> (tokens left, monotonic time of the last update), oldest
+# update first. A forgotten bucket is a full one, so dropping it is free.
+create_buckets: dict[str, tuple[float, float]] = {}
+
+
+def _client_key(request: Request) -> str:
+    """The address a request counts against. An IPv6 client usually controls
+    a whole /64, so that is what counts."""
+    raw = request.headers.get(CLIENT_IP_HEADER, "")
+    try:
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        return ""
+    if address.version == 6:
+        return str(ipaddress.ip_network(f"{address}/64", strict=False))
+    return str(address)
+
+
+def _take_create_token(key: str, now: float) -> float:
+    """Spend one of `key`'s session creations. Returns 0 if one was left,
+    otherwise the seconds until the next one is."""
+    # Untouched for this long, any bucket has refilled completely.
+    full_after = CREATE_BURST * CREATE_REFILL_SECONDS
+    while create_buckets:
+        oldest, (_, updated) = next(iter(create_buckets.items()))
+        if now - updated < full_after:
+            break
+        del create_buckets[oldest]
+
+    tokens, updated = create_buckets.pop(key, (CREATE_BURST, now))
+    tokens = min(CREATE_BURST, tokens + (now - updated) / CREATE_REFILL_SECONDS)
+    wait = 0.0
+    if tokens >= 1:
+        tokens -= 1
+    else:
+        wait = (1 - tokens) * CREATE_REFILL_SECONDS
+    # Re-inserted at the end, which keeps the map in update order.
+    create_buckets[key] = (tokens, now)
+    if len(create_buckets) > MAX_TRACKED_CLIENTS:
+        del create_buckets[next(iter(create_buckets))]
+    return wait
+
+
 def _state_topic(pin: str) -> str:
     return f"{pin}:state"
 
@@ -389,7 +459,14 @@ async def health():
 
 
 @router.post("/session", response_model=CreateSessionResponse)
-async def create_session():
+async def create_session(request: Request):
+    wait = _take_create_token(_client_key(request), time.monotonic())
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many sessions created",
+            headers={"Retry-After": str(math.ceil(wait))},
+        )
     now = time.time()
     _purge_expired(now)
     if len(live_sessions) >= MAX_LIVE_SESSIONS:

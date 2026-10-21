@@ -15,11 +15,14 @@ import quiz_relay_api as relay
 
 @pytest.fixture(autouse=True)
 def _forget_live_sessions():
-    # The live-session map is the relay's only module-level state; without
-    # this, pins handed out by one test would leak into the next.
+    # The live-session map and the rate-limit buckets are the relay's only
+    # module-level state; without this, pins handed out and sessions counted
+    # by one test would leak into the next.
     relay.live_sessions.clear()
+    relay.create_buckets.clear()
     yield
     relay.live_sessions.clear()
+    relay.create_buckets.clear()
 
 
 @pytest.fixture
@@ -140,6 +143,70 @@ async def test_create_session_fails_once_the_live_session_cap_is_reached(
     await _create_session(client)
 
     assert (await client.post("/session")).status_code == 503
+
+
+def _from(address):
+    return {relay.CLIENT_IP_HEADER: address}
+
+
+async def test_create_session_is_rate_limited_per_address(client, monkeypatch):
+    monkeypatch.setattr(relay, "CREATE_BURST", 3)
+    for _ in range(3):
+        assert (await client.post("/session", headers=_from("192.0.2.1"))).status_code == 200
+
+    response = await client.post("/session", headers=_from("192.0.2.1"))
+    assert response.status_code == 429
+    assert 0 < int(response.headers["Retry-After"]) <= relay.CREATE_REFILL_SECONDS
+    # A different address still has its whole allowance.
+    assert (await client.post("/session", headers=_from("192.0.2.2"))).status_code == 200
+
+
+async def test_forwarded_for_does_not_escape_the_rate_limit(client, monkeypatch):
+    # uvicorn on the platform trusts X-Forwarded-For from anyone, so a client
+    # can make `request.client` say whatever it likes.
+    monkeypatch.setattr(relay, "CREATE_BURST", 1)
+    await client.post("/session", headers=_from("192.0.2.1"))
+
+    response = await client.post(
+        "/session", headers={**_from("192.0.2.1"), "X-Forwarded-For": "198.51.100.7"}
+    )
+    assert response.status_code == 429
+
+
+async def test_an_ipv6_slash_64_counts_as_one_address(client, monkeypatch):
+    monkeypatch.setattr(relay, "CREATE_BURST", 1)
+    await client.post("/session", headers=_from("2001:db8:1:2::1"))
+
+    assert (await client.post("/session", headers=_from("2001:db8:1:2::ffff"))).status_code == 429
+    assert (await client.post("/session", headers=_from("2001:db8:1:3::1"))).status_code == 200
+
+
+def test_the_create_allowance_refills_over_time(monkeypatch):
+    monkeypatch.setattr(relay, "CREATE_BURST", 2)
+    monkeypatch.setattr(relay, "CREATE_REFILL_SECONDS", 10)
+    assert relay._take_create_token("a", 0) == 0
+    assert relay._take_create_token("a", 0) == 0
+    assert relay._take_create_token("a", 4) == pytest.approx(6)
+    assert relay._take_create_token("a", 10) == 0
+    assert relay._take_create_token("a", 10) > 0
+
+
+def test_a_refilled_bucket_is_forgotten(monkeypatch):
+    monkeypatch.setattr(relay, "CREATE_BURST", 2)
+    monkeypatch.setattr(relay, "CREATE_REFILL_SECONDS", 10)
+    relay._take_create_token("a", 0)
+    relay._take_create_token("b", 15)
+
+    relay._take_create_token("c", 20)
+    assert list(relay.create_buckets) == ["b", "c"]
+
+
+def test_the_bucket_map_is_bounded(monkeypatch):
+    monkeypatch.setattr(relay, "MAX_TRACKED_CLIENTS", 2)
+    for key in "abc":
+        relay._take_create_token(key, 0)
+
+    assert list(relay.create_buckets) == ["b", "c"]
 
 
 async def test_expired_reservations_free_their_pin(client, monkeypatch):
