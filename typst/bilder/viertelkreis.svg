@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <circle cx="110" cy="110" r="90" fill="none" stroke="#1f3b5c" stroke-width="2" stroke-dasharray="6 5"/>
+  <path d="M110,110 L200,110 A90,90 0 0 0 110,20 Z" fill="#bfe3c4" stroke="#1d6b2a" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="110" cy="110" r="4" fill="#1f3b5c"/>
+  <text x="155" y="132" font-family="sans-serif" font-size="20" fill="#1f3b5c" text-anchor="middle">r = 2</text>
+</svg>
