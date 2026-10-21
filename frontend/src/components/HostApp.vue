@@ -34,6 +34,7 @@ import HostLobby from "./HostLobby.vue";
 import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 import SoundToggle from "./SoundToggle.vue";
+import TypstEditor from "./TypstEditor.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
 // Generous for one class, but bounds what a flood of joins from strangers who
@@ -723,7 +724,7 @@ onUnmounted(() => {
             <template v-else-if="remoteLoaded">Geladen von <code>{{ remoteSource }}</code></template>
             <span v-else class="host-app__remote-error">{{ remoteError }}</span>
           </p>
-          <textarea v-model="quizSource" spellcheck="false" :readonly="remoteLoading"></textarea>
+          <TypstEditor v-model="quizSource" class="host-app__source" :readonly="remoteLoading" />
           <ul v-if="loadErrors.length" class="host-app__errors">
             <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
           </ul>
@@ -958,14 +959,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-.host-app textarea {
-  width: 100%;
+.host-app__source {
   flex: 1;
   min-height: 0;
-  resize: none;
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
-  box-sizing: border-box;
 }
 .host-app__errors {
   color: #b00020;
