@@ -34,6 +34,9 @@ const RETRY_MS = 2000;
  * a burst of messages with one snapshot up to half a second later, and a
  * re-send that fires before then is wasted. */
 const TICK_MS = 500;
+/** A gap this long between two ticks means the page was suspended (a locked
+ * phone, a backgrounded tab), not that ticks merely ran late. */
+const SUSPENDED_AFTER_MS = 4 * TICK_MS;
 
 startDebugLog("player");
 
@@ -60,6 +63,7 @@ const joinNotice = ref<string | undefined>();
 let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
 let lastSnapshotAt = 0;
+let lastTickAt = 0;
 // Per kind of message: a join and an answer can be unconfirmed at the same
 // time, and waiting for one must not hold back the other.
 const lastSentAt: Record<PlayerMessage["type"], number> = { join: 0, answer: 0 };
@@ -191,6 +195,11 @@ function send(message: PlayerMessage, retry = false) {
 function tick() {
   if (!pin.value || !playerToken.value) return;
   const now = Date.now();
+  // Nothing arrives while the page is suspended, and the stream needs a
+  // moment to come back after it. Counting that time as missed snapshots
+  // would put up the banner on every return to the tab.
+  if (now - lastTickAt > SUSPENDED_AFTER_MS) lastSnapshotAt = now;
+  lastTickAt = now;
 
   // The two are independent: during a question a snapshot only lists who has
   // answered, so a join made (or repeated after a reload) in that phase stays
@@ -278,6 +287,9 @@ function onJoined(session: StoredPlayerSession) {
   lastSnapshotAt = Date.now();
 
   unsubscribe = subscribeToState(session.pin, handleSnapshot, (state) => {
+    // A stream that has just (re)opened gets the full STALE_AFTER_MS for its
+    // first snapshot; otherwise `tick` puts the banner straight back up.
+    if (state === "open") lastSnapshotAt = Date.now();
     connection.value = state;
   });
   retryTimer = window.setInterval(tick, TICK_MS);

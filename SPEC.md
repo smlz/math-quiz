@@ -366,7 +366,10 @@ What each side keeps locally:
   a "reconnecting" banner (the host when publishing or its stream has been
   failing for 5 s, the player when its stream has been down for 5 s or after
   three missed heartbeats), so it is known whether this happens in practice.
-  Shorter outages, like the stream rotation above, stay unannounced.
+  Shorter outages, like the stream rotation above, stay unannounced. Time
+  the player page spent suspended (a locked phone, a backgrounded tab) does
+  not count as missed heartbeats, and neither does the time before a stream
+  that just reopened delivers its first snapshot.
 
 ## 5. Scoring
 
