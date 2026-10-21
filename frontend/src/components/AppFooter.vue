@@ -38,8 +38,7 @@ const soundCreditsHref = `${SOURCE_URL}/blob/${ref ?? "main"}/frontend/public/au
         <li><a href="/debug" target="_blank" rel="noopener">Diagnose</a></li>
         <li><a :href="`${SOURCE_URL}/issues`" target="_blank" rel="noopener">Feedback</a></li>
         <li><a :href="soundCreditsHref" target="_blank" rel="noopener">Musik-Nachweise</a></li>
-        <li>
-          Gesetzt mit
+        <li>Gesetzt mit
           <a href="https://typst.app" target="_blank" rel="noopener">Typst</a>
           &amp;
           <a href="https://github.com/Myriad-Dreamin/typst.ts" target="_blank" rel="noopener">typst.ts</a>
