@@ -63,10 +63,17 @@ const remoteError = ref<string | null>(null);
 const quizSource = ref(remoteSource ? "" : SAMPLE_QUIZ);
 const loadErrors = ref<string[]>([]);
 const quiz = ref<ParsedQuiz | null>(null);
-// True while every prompt/option is being compiled with Typst before the
-// lobby (and its QR code) is shown - the lobby only ever appears once this
-// has confirmed the whole document compiles cleanly.
-const validating = ref(false);
+// Set while "Quiz erstellen" is busy: first every prompt/option is compiled
+// with Typst before the lobby (and its QR code) is shown - the lobby only
+// ever appears once this has confirmed the whole document compiles cleanly -
+// then the session is created, which can take a while when the backend has
+// to cold-start.
+const creating = ref<"validating" | "connecting" | null>(null);
+const creatingLabel = computed(() =>
+  creating.value === "validating"
+    ? "Quiz wird geprüft …"
+    : "Verbindung zum Server wird aufgebaut … (kann beim ersten Start etwas dauern)",
+);
 
 // Separate from `quiz` so a half-typed draft in the editor never disturbs
 // the quiz that was validated for the running session.
@@ -222,10 +229,10 @@ async function loadAndCreateSession() {
     return;
   }
 
-  validating.value = true;
+  creating.value = "validating";
   const typstErrors = await compileAllTypstSnippets(quiz.value);
-  validating.value = false;
   if (typstErrors.length) {
+    creating.value = null;
     quiz.value = null;
     loadErrors.value = typstErrors;
     debugLog("quiz does not compile", { issues: typstErrors.length, first: typstErrors[0] });
@@ -233,9 +240,11 @@ async function loadAndCreateSession() {
   }
 
   let created: HostCredentials;
+  creating.value = "connecting";
   try {
     created = await createSession();
   } catch (e) {
+    creating.value = null;
     quiz.value = null;
     loadErrors.value = [createSessionErrorMessage(e)];
     debugLog("session not created", { error: describeError(e) });
@@ -243,6 +252,7 @@ async function loadAndCreateSession() {
   }
   addDebugSecret(created.hostToken);
   debugLog("session created", { pin: created.pin, questions: quiz.value.questions.length });
+  creating.value = null;
   pin.value = created.pin;
   hostToken.value = created.hostToken;
 
@@ -691,10 +701,15 @@ onUnmounted(() => {
           <button
             type="button"
             class="host-app__submit"
-            :disabled="validating || remoteLoading"
+            :disabled="creating !== null || remoteLoading"
+            :aria-busy="creating !== null"
             @click="loadAndCreateSession"
           >
-            {{ validating ? "Wird geprüft …" : "Quiz erstellen" }}
+            <template v-if="creating">
+              <span class="host-app__spinner" aria-hidden="true"></span>
+              {{ creatingLabel }}
+            </template>
+            <template v-else>Quiz erstellen</template>
           </button>
         </div>
 
@@ -874,6 +889,22 @@ onUnmounted(() => {
 }
 .host-app__submit {
   margin-top: 0.75rem;
+}
+.host-app__spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.5em;
+  vertical-align: -0.15em;
+  border: 0.15em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: host-app-spin 0.8s linear infinite;
+}
+@keyframes host-app-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .host-app__preview {
   display: flex;
