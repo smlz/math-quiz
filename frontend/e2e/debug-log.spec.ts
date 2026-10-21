@@ -42,7 +42,7 @@ test("host and player each keep a log that matches the other's and holds no toke
   await host.getByRole("button", { name: "Frage starten" }).click();
   await ada.locator(".player-answer-grid__option").nth(2).click();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 
   const { playerId, playerToken } = await ada.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)!),
@@ -54,7 +54,7 @@ test("host and player each keep a log that matches the other's and holds no toke
     `pin: ${pin}`,
     `player: ${playerId}`,
     "send type=answer question_index=0 option_index=2",
-    "snapshot phase=reveal q=0 listed=true players=1 score=12",
+    "snapshot phase=reveal q=0 listed=true players=1 score=13",
   ]);
   const hostLog = await readDebugPage(host, "Als Lehrperson", [
     `session created pin=${pin}`,

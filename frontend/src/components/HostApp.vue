@@ -137,7 +137,7 @@ const scoresBeforeReveal = ref<Map<string, number> | null>(null);
 const removed = reactive(new Set<string>());
 
 const currentQuestionIndex = ref(-1);
-// Insertion order is arrival order, which is exactly what decides the 12/11/10
+// Insertion order is arrival order, which is exactly what decides the 13-to-10
 // ladder -- no timestamps needed.
 const answers = reactive(new Map<string, number>()); // player_id -> option_index
 // Who answered the current question correctly, in arrival order. Frozen at

@@ -47,7 +47,7 @@ independent of the quiz use case, are in Appendix A.
   file per quiz, which is itself a valid Typst document (§3.2) — not
   Markdown, and not a container format with Typst embedded in it.
 - A quiz file contains an ordered list of questions (see §3.2). Correct
-  answers are worth a hardcoded 12/11/10 points by submission order (§5),
+  answers are worth a hardcoded 13 down to 10 points by submission order (§5),
   and each question's prompt/answer-grid space split defaults to an even
   `0.5` (§3.2, overridable per question) — neither is configurable.
 - All question content — the prompt and all four answer options — is **Typst**
@@ -139,7 +139,7 @@ The `#question` arguments are all named, and there are only four of them:
   values favor a short prompt with dense answers, lower values favor a long
   prompt/figure with short answers. It applies identically to the host
   screen and to the compiled document (§3.3).
-- Points follow the hardcoded 12/11/10 submission-order ladder for every
+- Points follow the hardcoded 13-to-10 submission-order ladder for every
   question (§5), not configurable, so there is no points override.
 - Parsing/validation errors (`correct` missing or outside `A`–`D`, wrong
   number of options, `answer-area-fraction` outside `(0, 1)`, a `prompt` or
@@ -398,12 +398,13 @@ What each side keeps locally:
 ## 5. Scoring
 
 - Correct answers are scored by **submission order** within a question: the
-  first player to answer correctly gets **12 points**, the second **11
-  points**, every further correct answer **10 points**. Wrong answers and
-  non-answers score 0. Not configurable per quiz or per question.
+  first player to answer correctly gets **13 points**, the second **12
+  points**, the third **11 points**, every further correct answer **10
+  points**. Wrong answers and non-answers score 0. Not configurable per quiz
+  or per question.
 - The order is simply the order the host received the answers in; only
-  *correct* answers occupy the 12/11 slots, so a fast wrong answer never
-  costs anyone the bonus. Points beyond the first two correct answers do not
+  *correct* answers occupy the 13/12/11 slots, so a fast wrong answer never
+  costs anyone the bonus. Points beyond the first three correct answers do not
   decay further (there is no time limit, §4.1).
 - At reveal the host publishes the correct answerers **in that order**, so
   the points just won are a pure function of a player's position in that
@@ -688,10 +689,10 @@ purges the whole map.
   via SymPy) — multiple choice with exactly 4 options is the only supported
   question type (§3.1).
 - Persistent player accounts / cross-session history / streak bonuses.
-- Configurable scoring values (the 12/11/10 submission-order ladder is
+- Configurable scoring values (the 13-to-10 submission-order ladder is
   hardcoded, §5).
 - Continuous timing-based scoring (points scaling with the exact answer time).
-  The only speed component is the fixed 12/11/10 bonus for the first two
+  The only speed component is the fixed 13-to-10 bonus for the first three
   correct answers (§5); there is still no per-question time limit.
 - Horizontal scaling (multi-replica fan-out via Redis or Postgres
   LISTEN/NOTIFY).

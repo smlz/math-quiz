@@ -121,8 +121,8 @@
         <dt>Ein Fragetyp, feste Regeln</dt>
         <dd>
           Es gibt nur Multiple Choice mit genau vier Antworten, von denen genau eine richtig ist. Eine Antwort ist
-          endgültig. Es gibt keine Zeitlimite, und die Punkte sind fest: 12 für die erste richtige Antwort, 11 für die
-          zweite, 10 für jede weitere.
+          endgültig. Es gibt keine Zeitlimite, und die Punkte sind fest: 13 für die erste richtige Antwort, 12 für die
+          zweite, 11 für die dritte, 10 für jede weitere.
         </dd>
 
         <dt>Die PIN ist der einzige Schutz</dt>

@@ -50,7 +50,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
   await expect(ada.locator(".player-answer-grid__mark--correct")).toBeVisible();
   await expect(bo.locator(".player-app__reveal-wrong")).toContainText("+0 Punkte");
   await expect(bo.locator(".player-answer-grid__mark--wrong")).toBeVisible();
@@ -58,7 +58,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   await expect(host.getByRole("heading", { name: "Rangliste" })).toBeVisible();
   await expect(host.locator(".leaderboard__row").first()).toContainText("Ada");
-  await expect(host.locator(".leaderboard__row").first()).toContainText("12");
+  await expect(host.locator(".leaderboard__row").first()).toContainText("13");
 
   await host.getByRole("button", { name: "Nächste Frage" }).click();
 
@@ -69,8 +69,8 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
-  await expect(bo.locator(".player-app__reveal-correct")).toContainText("+11 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+  await expect(bo.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
 
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   await expect(host.getByRole("button", { name: "Nächste Frage" })).toBeVisible();
@@ -83,7 +83,7 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
 
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
   await expect(bo.locator(".player-app__reveal-wrong")).toContainText("+0 Punkte");
 
   // The last question jumps straight from reveal to the final screen -- no
@@ -94,12 +94,12 @@ test("host + 2 players play a full 3-question game", async ({ browser }) => {
   const rows = host.locator(".leaderboard__row");
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Ada");
-  await expect(rows.first()).toContainText("36");
+  await expect(rows.first()).toContainText("39");
   await expect(rows.nth(1)).toContainText("Bo");
-  await expect(rows.nth(1)).toContainText("11");
+  await expect(rows.nth(1)).toContainText("12");
   await expect(ada.getByRole("heading", { name: "Quiz beendet!" })).toBeVisible();
-  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible();
-  await expect(bo.getByText("Du hast auf Platz 2 mit 11 Punkten abgeschlossen")).toBeVisible();
+  await expect(ada.getByText("Du hast auf Platz 1 mit 39 Punkten abgeschlossen")).toBeVisible();
+  await expect(bo.getByText("Du hast auf Platz 2 mit 12 Punkten abgeschlossen")).toBeVisible();
 
   // --- A join after the end is turned away rather than ranked last. ---
   const lateContext = await browser.newContext();
@@ -150,12 +150,12 @@ test("the leaderboard animates from the old standings into the new ones", async 
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
 
   // The points won are shown while the score counts up ...
-  await expect(host.locator(".leaderboard__gain")).toHaveText("+12");
+  await expect(host.locator(".leaderboard__gain")).toHaveText("+13");
 
   // ... and are gone again once the rows have settled in their new order.
   const rows = host.locator(".leaderboard__row");
   await expect(rows.first()).toContainText("Bo");
-  await expect(rows.first().locator(".leaderboard__score")).toHaveText("12");
+  await expect(rows.first().locator(".leaderboard__score")).toHaveText("13");
   await expect(rows.nth(1)).toContainText("Ada");
   await expect(rows.nth(1).locator(".leaderboard__rank")).toHaveText("2");
   await expect(rows.nth(1).locator(".leaderboard__trend")).toHaveText("▼1");
@@ -185,13 +185,13 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await host.getByRole("button", { name: "Frage starten" }).click();
   await answerOption(ada, 2);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
 
   // --- Host reload: the quiz source and scores only exist in this browser. ---
   await host.reload();
   await expect(host.getByRole("heading", { name: "Rangliste" })).toBeVisible();
-  await expect(host.locator(".leaderboard__row").first()).toContainText("12");
+  await expect(host.locator(".leaderboard__row").first()).toContainText("13");
   await host.getByRole("button", { name: "Nächste Frage" }).click();
 
   await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
@@ -204,13 +204,13 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await expect(ada.locator(".player-app__nickname")).toHaveText("Ada");
 
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
-  await expect(ada.locator(".player-app__total-score")).toContainText("24");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+  await expect(ada.locator(".player-app__total-score")).toContainText("26");
 
   // --- Player reload during the reveal: the question must not count twice. ---
   await ada.reload();
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
-  await expect(ada.locator(".player-app__total-score")).toHaveText("Gesamtpunktzahl: 24");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+  await expect(ada.locator(".player-app__total-score")).toHaveText("Gesamtpunktzahl: 26");
 
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
   // The reconnect must not have added a second "Ada" to the roster.
@@ -219,7 +219,7 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await host.getByRole("button", { name: "Nächste Frage" }).click();
   await answerOption(ada, 0);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
-  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+12 Punkte");
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 
   // --- Ada's phone is away while the final screen goes up. It only comes
   // back after that broadcast, so the final rank has to reach it with a
@@ -230,7 +230,7 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
   await expect(host.getByRole("heading", { name: "Endergebnis" })).toBeVisible();
   ada = await adaContext.newPage();
   await ada.goto(adaUrl);
-  await expect(ada.getByText("Du hast auf Platz 1 mit 36 Punkten abgeschlossen")).toBeVisible({
+  await expect(ada.getByText("Du hast auf Platz 1 mit 39 Punkten abgeschlossen")).toBeVisible({
     timeout: 10_000,
   });
   // The player's credential is useless once it has seen the end ...

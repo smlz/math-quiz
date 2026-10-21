@@ -79,8 +79,8 @@ export interface IncomingMessage {
   payload: PlayerMessage;
 }
 
-// First correct answer scores 12, second 11, every further one 10.
-const POINTS_BY_CORRECT_RANK = [12, 11];
+// First correct answer scores 13, second 12, third 11, every further one 10.
+const POINTS_BY_CORRECT_RANK = [13, 12, 11];
 const POINTS_PER_CORRECT_ANSWER = 10;
 
 /** Points a player earned for the question in a `reveal` snapshot, derived
