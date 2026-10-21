@@ -20,7 +20,7 @@ const qrDataUrl = ref("");
 watch(
   () => props.pin,
   async (pin) => {
-    qrDataUrl.value = await QRCode.toDataURL(`${joinBase}?pin=${pin}`, { width: 400 });
+    qrDataUrl.value = await QRCode.toDataURL(`${joinBase}?pin=${pin}`, { width: 300 });
   },
   { immediate: true },
 );
@@ -28,7 +28,7 @@ watch(
 
 <template>
   <section class="host-lobby">
-    <h2>Beitreten auf <a :href="joinBase">{{ joinBase }}</a></h2>
+    <h2 class="host-lobby__title">Beitreten auf <a class="host-lobby__url" :href="joinBase">{{ joinBase }}</a></h2>
     <p class="host-lobby__pin">{{ pin }}</p>
     <a :href="joinUrl" target="_blank" rel="noopener noreferrer">
       <img v-if="qrDataUrl" :src="qrDataUrl" :alt="`QR-Code für ${joinUrl}`" class="host-lobby__qr" />
@@ -86,6 +86,19 @@ watch(
   text-decoration: underline;
   min-height: 1rem;
 }
+.host-lobby__title {
+  font-size: 2rem;
+  margin: 0.5rem 0 1.5rem 0;
+}
+.host-lobby__url {
+  font-size: 2.2rem;
+  padding-left: 0.3rem;
+  font-family: var(--mono);
+  font-weight: bold;
+  letter-spacing: -2px;
+  color: var(--text) ;
+  text-decoration: none;
+}
 .host-lobby__pin {
   font-size: 3rem;
   font-weight: 700;
@@ -93,7 +106,7 @@ watch(
   margin: 0.5rem 0;
 }
 .host-lobby__qr {
-  margin: 3rem auto;
+  margin: 2rem auto;
   display: block;
 }
 .host-lobby__count {
