@@ -13,7 +13,7 @@ rendered in the browser via
 [typst.ts](https://github.com/Myriad-Dreamin/typst.ts) — plain text, math and
 figures all use the same syntax. Player devices only ever show four colored
 A/B/C/D buttons; the question and its answer options are read off the host
-screen. There is one question type: multiple choice with exactly four options.
+screen. Every question is multiple choice with exactly four options.
 
 There is no login, no tracking, no ads, no analytics, no telemetry, no
 cookies, no social media buttons. Only the host screen loads external scripts
