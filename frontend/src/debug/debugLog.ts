@@ -39,6 +39,7 @@ const KEY_PREFIX = "math-quiz-debug:";
 const MAX_ENTRIES = 3000;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PERSIST_DELAY_MS = 1000;
+const STACK_FRAMES = 6;
 
 declare const __SOURCE_VERSION__: { commit: string | null; tag: string | null };
 export const APP_VERSION =
@@ -48,6 +49,9 @@ let role: DebugRole | null = null;
 let log: StoredLog = emptyLog();
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 const secrets = new Set<string>();
+// The console as it was before startDebugLog wrapped it, so that a reported
+// exception is printed without being logged a second time.
+let printError: (...args: unknown[]) => void = (...args) => console.error(...args);
 
 function emptyLog(): StoredLog {
   return { v: 2, context: {}, entries: [] };
@@ -94,13 +98,20 @@ export function startDebugLog(pageRole: DebugRole): void {
   window.addEventListener("online", () => debugLog("network online"));
   window.addEventListener("offline", () => debugLog("network offline"));
   window.addEventListener("error", (event) => {
-    debugLog("uncaught error", { message: event.message, at: `${event.filename}:${event.lineno}:${event.colno}` });
+    // A script from another origin (typst.ts) only ever says "Script error.".
+    debugLog(
+      "uncaught error",
+      event.error
+        ? { error: describeException(event.error) }
+        : { message: event.message, at: `${event.filename}:${event.lineno}:${event.colno}` },
+    );
   });
   window.addEventListener("unhandledrejection", (event) => {
-    debugLog("unhandled rejection", { reason: describeError(event.reason) });
+    debugLog("unhandled rejection", { reason: describeException(event.reason) });
   });
   for (const level of ["warn", "error"] as const) {
     const original = console[level].bind(console);
+    if (level === "error") printError = original;
     console[level] = (...args: unknown[]) => {
       debugLog(`console.${level}`, { message: args.map(describeError).join(" ") });
       original(...args);
@@ -162,6 +173,30 @@ export function describeError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+/** Like describeError, followed by the innermost frames of where it was
+ * thrown -- for exceptions, not for the failures the app expects. Frames on
+ * this site are shortened to their path. */
+export function describeException(error: unknown): string {
+  const description = describeError(error);
+  if (!(error instanceof Error) || !error.stack) return description;
+  // Chromium starts the stack with the error itself, Firefox and Safari don't.
+  const header = String(error);
+  const stack = error.stack.startsWith(header) ? error.stack.slice(header.length) : error.stack;
+  const frames = stack
+    .split("\n")
+    .map((line) => line.trim().replace(/^at /, "").split(location.origin).join(""))
+    .filter(Boolean)
+    .slice(0, STACK_FRAMES);
+  return frames.length ? `${description} @ ${frames.join(" < ")}` : description;
+}
+
+/** Logs an exception that something caught on the app's behalf (Vue, for
+ * one) and prints it as it would otherwise have been. */
+export function reportException(event: string, error: unknown, details?: Record<string, unknown>): void {
+  debugLog(event, { ...details, error: describeException(error) });
+  printError(error);
 }
 
 function schedulePersist(): void {
@@ -271,4 +306,5 @@ export function resetDebugLogForTests(): void {
   role = null;
   log = emptyLog();
   secrets.clear();
+  printError = (...args) => console.error(...args);
 }

@@ -7,6 +7,8 @@
 // that is never finished keeps its entry so a player can come back to it
 // hours later.
 
+import { debugLog, describeError } from "../debug/debugLog";
+
 const PLAYER_KEY_PREFIX = "math-quiz-player:";
 const HOST_KEY = "math-quiz-host";
 // The nickname last joined with, prefilled into the next join form.
@@ -47,8 +49,9 @@ function read<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
     return raw === null ? null : (JSON.parse(raw) as T);
-  } catch {
+  } catch (e) {
     // Corrupt/unparsable entry is indistinguishable from no entry here.
+    debugLog("stored entry unreadable", { key, error: describeError(e) });
     localStorage.removeItem(key);
     return null;
   }
