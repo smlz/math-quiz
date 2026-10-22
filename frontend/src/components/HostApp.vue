@@ -682,7 +682,8 @@ function resetToSetup() {
  * host straight back to the editor -- there is nothing to show a rank for. */
 async function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
-  if (!window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
+  // Confirm cancelling as soon as players started to join
+  if (roster.size > 0 && !window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
   debugLog("quiz aborted", { pin: pin.value, phase: status.value });
   // Tells connected players the session is over so they leave their current
   // screen too, rather than just going silent on them. A snapshot still
