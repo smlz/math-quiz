@@ -57,11 +57,11 @@ describe("debugLog", () => {
     debugLog("broadcast", { phase: "lobby", players: 2 });
     vi.advanceTimersByTime(5000);
     debugLog("broadcast", { phase: "lobby", players: 2 });
-    debugLog("join", { player: "p1", nickname: "Ada Lovelace" });
+    debugLog("request failed", { path: "/api/v1/session", error: "TypeError: Failed to fetch" });
 
     expect(logLines("host").slice(1)).toEqual([
       "10:00:00.000 broadcast phase=lobby players=2 ×3 until 10:00:10.000",
-      '10:00:10.000 join player=p1 nickname="Ada Lovelace"',
+      '10:00:10.000 request failed path=/api/v1/session error="TypeError: Failed to fetch"',
     ]);
   });
 

@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The diagnostic log is recorded on every device and leaves it only by hand,
 // via /debug (see src/debug/debugLog.ts). A pupil's log and the teacher's
 // have to fit together -- the same player id in both -- and neither may
-// carry a token.
+// carry a token or a nickname.
 
 /** Opens /debug next to the quiz tab and returns the log shown for `title`.
  * The quiz tab writes its log with a short delay; /debug follows along. */
@@ -58,13 +58,16 @@ test("host and player each keep a log that matches the other's and holds no toke
   ]);
   const hostLog = await readDebugPage(host, "Als Lehrperson", [
     `session created pin=${pin}`,
-    `join player=${playerId} nickname=Ada`,
+    `join player=${playerId}`,
     `answer player=${playerId} q=0 option=2 nth=1`,
     `revealed q=0 answers=1 players=1 correct=${playerId}`,
   ]);
 
   expect(playerLog).not.toContain(playerToken);
   expect(hostLog).not.toContain(hostToken);
+  // Either may be posted publicly, in a bug report.
+  expect(playerLog).not.toContain("Ada");
+  expect(hostLog).not.toContain("Ada");
 
   await hostContext.close();
   await adaContext.close();

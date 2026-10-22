@@ -6,6 +6,10 @@
 // the teacher) can copy it and send it along. Nothing is ever uploaded: the
 // only way out is a button press, see DebugExport.vue and /debug.
 //
+// An export may end up in a public bug report, so it identifies devices only
+// by the random player ids and never names anyone: no nickname may be logged,
+// not even the player's own.
+//
 // The log is mirrored to localStorage per role, because the moment something
 // goes wrong is usually followed by a reload, and because the session entries
 // in storedSession.ts are deleted exactly when a quiz ends. It is a ring
@@ -24,7 +28,8 @@ interface Entry {
 }
 
 interface StoredLog {
-  v: 1;
+  /** 1 still carried nicknames, so such logs are dropped rather than read. */
+  v: 2;
   /** Whatever the app last said about itself: pin, own id, roster, ... */
   context: Record<string, unknown>;
   entries: Entry[];
@@ -45,7 +50,7 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 const secrets = new Set<string>();
 
 function emptyLog(): StoredLog {
-  return { v: 1, context: {}, entries: [] };
+  return { v: 2, context: {}, entries: [] };
 }
 
 function storageKey(forRole: DebugRole): string {
@@ -181,7 +186,7 @@ function readStoredLog(forRole: DebugRole): StoredLog | null {
     const raw = localStorage.getItem(storageKey(forRole));
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as StoredLog;
-    return parsed?.v === 1 && Array.isArray(parsed.entries) ? parsed : null;
+    return parsed?.v === 2 && Array.isArray(parsed.entries) ? parsed : null;
   } catch {
     return null;
   }

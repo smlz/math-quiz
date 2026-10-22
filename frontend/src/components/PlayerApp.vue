@@ -185,7 +185,8 @@ function persist() {
 /** Every message goes out through here, so `tick` knows how long the host has
  * had to confirm the latest one of its kind. */
 function send(message: PlayerMessage, retry = false) {
-  debugLog(retry ? "resend" : "send", { ...message });
+  // The nickname stays out of the log, see debugLog.ts.
+  debugLog(retry ? "resend" : "send", message.type === "join" ? { type: "join" } : { ...message });
   lastSentAt[message.type] = Date.now();
   return sendMessage(pin.value!, playerToken.value!, message);
 }
@@ -266,7 +267,7 @@ function leaveAfterRemoval() {
 
 function onJoined(session: StoredPlayerSession) {
   addDebugSecret(session.playerToken);
-  setDebugContext({ pin: session.pin, player: session.playerId, nickname: session.nickname });
+  setDebugContext({ pin: session.pin, player: session.playerId });
   debugLog("session", {
     pin: session.pin,
     player: session.playerId,

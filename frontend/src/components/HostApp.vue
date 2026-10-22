@@ -367,7 +367,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     if (!nickname) return ignore("unusable nickname");
     roster.set(player_id, nickname);
     if (!scores.has(player_id)) scores.set(player_id, 0);
-    debugLog("join", { player: player_id, nickname });
+    debugLog("join", { player: player_id });
   } else if (payload.type === "answer") {
     if (status.value !== "question" || !currentQuestion.value) return ignore(`phase ${status.value}`);
     if (payload.question_index !== currentQuestionIndex.value) {
@@ -409,7 +409,7 @@ watch(
       phase: status.value,
       question: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
       questions: quiz.value?.questions.length ?? null,
-      players: [...roster].map(([id, nickname]) => `${id} ${nickname} (${scores.get(id) ?? 0})`),
+      players: [...roster.keys()].map((id) => `${id} (${scores.get(id) ?? 0})`),
       removed: [...removed],
     }),
   { deep: true, immediate: true },
@@ -605,7 +605,7 @@ async function removePlayer(playerId: string) {
   const nickname = roster.get(playerId);
   if (nickname === undefined) return;
   if (!window.confirm(`«${nickname}» aus dem Quiz entfernen? Die Person kann mit einem anderen Namen neu beitreten.`)) return;
-  debugLog("player removed", { player: playerId, nickname });
+  debugLog("player removed", { player: playerId });
   removed.add(playerId);
   roster.delete(playerId);
   scores.delete(playerId);
