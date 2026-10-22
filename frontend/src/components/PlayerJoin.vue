@@ -21,9 +21,7 @@ const pin = ref(params.get("pin") ?? props.initialPin ?? "");
 // The lobby's QR code carries the pin, so a link with one was opened by a
 // pupil mid-lesson, who has no use for the way to the host page.
 const showCreateLink = !params.has("pin");
-const storedNickname = loadNickname();
-const nickname = ref(storedNickname);
-const nicknameReadonly = ref(!!storedNickname);
+const nickname = ref(loadNickname());
 const error = ref("");
 const joining = ref(false);
 const reconnecting = ref(false);
@@ -95,10 +93,7 @@ onMounted(() => {
     </label>
     <label>
       Nickname
-      <input v-model="nickname" :readonly="nicknameReadonly" maxlength="30" placeholder="Dein Name" />
-      <button v-if="nicknameReadonly" type="button" class="player-join__change-nickname" @click="nicknameReadonly = false">
-        Ändern
-      </button>
+      <input v-model="nickname" maxlength="30" placeholder="Dein Name" />
     </label>
     <p v-if="error" class="player-join__error">{{ error }}</p>
     <button type="submit" :disabled="joining">{{ joining ? "Trete bei…" : "Beitreten" }}</button>
@@ -140,16 +135,5 @@ onMounted(() => {
 .player-join__reconnecting {
   margin: 3rem auto;
   font-weight: 600;
-}
-.player-join__change-nickname {
-  justify-self: start;
-  background: none;
-  border: none;
-  padding: 0;
-  min-height: 0;
-  font-size: x-small;
-  text-decoration: underline;
-  cursor: pointer;
-  font-weight: 400;
 }
 </style>
