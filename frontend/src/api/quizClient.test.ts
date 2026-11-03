@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  isNewerSnapshot,
   rankForScore,
   reportAfterGrace,
   revealOutcome,
@@ -21,6 +22,20 @@ describe("rankForScore", () => {
 
   it("ranks everyone first when all are tied", () => {
     expect(rankForScore([10, 10, 10], 10)).toBe(1);
+  });
+});
+
+describe("isNewerSnapshot", () => {
+  const snapshot = (seq?: number): SessionSnapshot => ({ phase: "lobby", question_index: null, players: [], seq });
+
+  it("takes only a snapshot numbered above the last one applied", () => {
+    expect(isNewerSnapshot(snapshot(11), 10)).toBe(true);
+    expect(isNewerSnapshot(snapshot(10), 10)).toBe(false);
+    expect(isNewerSnapshot(snapshot(9), 10)).toBe(false);
+  });
+
+  it("takes an unnumbered snapshot from an older host page", () => {
+    expect(isNewerSnapshot(snapshot(), 10)).toBe(true);
   });
 });
 

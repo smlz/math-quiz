@@ -147,6 +147,15 @@ const correctOrder = ref<string[]>([]);
 let unsubscribe: (() => void) | null = null;
 let heartbeat: number | null = null;
 let pendingBroadcast: number | null = null;
+// The number of the latest snapshot (SessionSnapshot.seq). Based on the clock,
+// so that it keeps growing across a reload of this page, and on the previous
+// number, so that it does so even if the clock is set back.
+let lastSeq = 0;
+
+function nextSeq(): number {
+  lastSeq = Math.max(lastSeq + 1, Date.now());
+  return lastSeq;
+}
 
 const lobbyPlayers = computed(() => [...roster].map(([player_id, nickname]) => ({ player_id, nickname })));
 
@@ -299,6 +308,7 @@ function buildSnapshot(): SessionSnapshot {
     phase,
     question_index: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
     players,
+    seq: nextSeq(),
     ...(phase === "reveal" && currentQuestion.value
       ? {
           correct_index: currentQuestion.value.correctIndex,
@@ -465,6 +475,7 @@ function persistSession() {
     answers: [...answers],
     correctOrder: correctOrder.value,
     removed: [...removed],
+    seq: lastSeq,
   });
 }
 
@@ -506,6 +517,7 @@ if (restored?.hostToken) {
     for (const [playerId, score] of restored.scores) scores.set(playerId, score);
     for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
     for (const playerId of restored.removed ?? []) removed.add(playerId);
+    lastSeq = restored.seq ?? 0;
     status.value = restored.status as Status;
     addDebugSecret(restored.hostToken);
     debugLog("session restored", {
@@ -702,7 +714,12 @@ async function endQuizNow() {
   // screen too, rather than just going silent on them. A snapshot still
   // scheduled must not follow it and bring the session back.
   cancelPendingBroadcast();
-  await publishState(pin.value, hostToken.value, { phase: "finished", question_index: null, players: [] });
+  await publishState(pin.value, hostToken.value, {
+    phase: "finished",
+    question_index: null,
+    players: [],
+    seq: nextSeq(),
+  });
   clearHostSession();
   try {
     await endSession(pin.value, hostToken.value);

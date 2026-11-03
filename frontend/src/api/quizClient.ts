@@ -7,7 +7,9 @@
 // Reliability comes from idempotent state transfer, not from delivery
 // guarantees: the host re-broadcasts a complete snapshot on every change and
 // every few seconds regardless, so a dropped frame costs at most one
-// heartbeat. Nothing here replays, buffers or acknowledges anything.
+// heartbeat. Nothing here replays, buffers or acknowledges anything. Snapshots
+// are numbered, so one that arrives late -- after a stalled connection let a
+// backlog through all at once -- is recognised and dropped.
 
 import { debugLog, describeError } from "../debug/debugLog";
 
@@ -69,6 +71,10 @@ export interface SessionSnapshot {
   /** Reveal only: everyone whose answer reached the host, right or wrong, so
    * a player can tell "wrong" from "never arrived". */
   answered?: string[];
+  /** Grows with every snapshot the host publishes, across reloads of the
+   * host page too. The relay forwards snapshots in the order they reach it,
+   * which after a stalled connection is not the order they were sent in. */
+  seq?: number;
 }
 
 export type PlayerMessage =
@@ -99,6 +105,13 @@ export function pointsForReveal(correctPlayerIds: string[], playerId: string): n
  * share a rank and the next score skips ahead (1, 2, 2, 4). */
 export function rankForScore(scores: number[], score: number): number {
   return 1 + scores.filter((other) => other > score).length;
+}
+
+/** Whether `snapshot` is newer than the last one applied, numbered `lastSeq`.
+ * One without a number comes from a host page older than the numbering and
+ * is always taken, as it used to be. */
+export function isNewerSnapshot(snapshot: SessionSnapshot, lastSeq: number): boolean {
+  return typeof snapshot.seq !== "number" || snapshot.seq > lastSeq;
 }
 
 /** What a player is told when the answer is revealed. */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
 import {
+  isNewerSnapshot,
   pointsForReveal,
   rankForScore,
   revealOutcome,
@@ -67,6 +68,11 @@ let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
 let lastSnapshotAt = 0;
 let lastTickAt = 0;
+// The number of the last snapshot applied. A stalled host connection can
+// deliver a backlog of old snapshots all at once, in any order; applying
+// them would flip this screen back and forth between phases, and an old
+// question would even wipe out the answer already given to the current one.
+let lastSeq = 0;
 // Per kind of message: a join and an answer can be unconfirmed at the same
 // time, and waiting for one must not hold back the other.
 const lastSentAt: Record<PlayerMessage["type"], number> = { join: 0, answer: 0 };
@@ -107,6 +113,11 @@ function handleSnapshot(snapshot: SessionSnapshot) {
 
   const me = playerId.value;
   if (!me) return;
+  if (!isNewerSnapshot(snapshot, lastSeq)) {
+    debugLog("snapshot ignored", { reason: "out of date", phase: snapshot.phase, q: snapshot.question_index });
+    return;
+  }
+  if (typeof snapshot.seq === "number") lastSeq = snapshot.seq;
   if (snapshot.removed?.includes(me)) {
     debugLog("removed by host");
     leaveAfterRemoval();

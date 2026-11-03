@@ -373,6 +373,15 @@ relay durable, **reliability comes from idempotent state transfer**:
   a round trip fit comfortably inside them.
 - A dropped message therefore costs at most one heartbeat of latency, never
   correctness.
+- Snapshots are **numbered** (`seq`). The relay forwards them in the order
+  they reach it, which is not always the order they were sent in: a host
+  whose connection stalls has its backlog arrive all at once, oldest and
+  newest mixed. A player therefore ignores any snapshot that is not newer
+  than the last one it applied — otherwise its screen would flip between
+  phases, and an old question would even clear the answer given to the
+  current one. The host numbers with the larger of the previous number plus
+  one and the clock, so numbers keep growing across a reload of the host
+  page and a clock that is set back.
 
 What each side keeps locally:
 
@@ -495,6 +504,7 @@ class SessionSnapshot(TypedDict):
     removed: NotRequired[list[str]]   # players the host removed
     answered: NotRequired[list[str]]  # reveal only: everyone whose answer
                                       # reached the host, right or wrong
+    seq: int                          # grows with every snapshot (§4.3)
 ```
 
 `players` carries a different meaning per phase, which is what keeps it this
@@ -870,7 +880,8 @@ no state at all (§6.1).
   players retry a message until they observe its effect in a snapshot, and
   the host dedupes by member id. At-least-once, with the host as the durable
   store. No replay log, no `Last-Event-ID` — a lost message costs at most
-  one heartbeat (§4.3).
+  one heartbeat (§4.3). Snapshots are numbered, so one that arrives late is
+  recognised and dropped.
 - Two SSE endpoints per session: a public player stream (host → all) and a
   host-only inbox (players → host). The host reads its inbox via `fetch` +
   `ReadableStream` so the token travels in a header; `EventSource` cannot

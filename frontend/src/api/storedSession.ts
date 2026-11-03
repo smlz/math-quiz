@@ -43,6 +43,9 @@ export interface StoredHostSession {
   /** Removed player ids, still ignored after a reload. Absent in entries
    * written before players could be removed. */
   removed?: string[];
+  /** The number of the latest snapshot sent, which the next one must exceed.
+   * Absent in entries written before snapshots were numbered. */
+  seq?: number;
 }
 
 function read<T>(key: string): T | null {
