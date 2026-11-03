@@ -148,8 +148,8 @@ PlayerTokenHeader = Header(
 # Tokens
 
 # Without a fixed secret every token minted before a restart stops verifying.
-# That is the right behaviour for local dev and tests; production sets the
-# env var so a cold-started replica still recognises a running session.
+# That is the right behavior for local dev and tests; production sets the
+# env var so a cold-started replica still recognizes a running session.
 _secret = os.environ.get("SERVER_SECRET")
 SERVER_SECRET = _secret.encode() if _secret else secrets.token_bytes(32)
 
@@ -333,7 +333,7 @@ def _message_topic(pin: str) -> str:
 
 def _purge_expired(now: float) -> None:
     """Drop expired reservations from the front of the map. Entries are
-    inserted in (nearly) expiry order, so this is amortised O(1); the rare
+    inserted in (nearly) expiry order, so this is amortized O(1); the rare
     straggler behind a younger entry is still treated as free by
     `_pin_in_use` and only lingers until the purge reaches it."""
     while live_sessions:
