@@ -875,29 +875,38 @@ function resetToSetup() {
 /** Host-initiated early abort, available any time a session is running.
  * Unlike a normal finish, this skips the leaderboard entirely and drops the
  * host straight back to the editor -- there is nothing to show a rank for. */
-async function endQuizNow() {
+function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
+  const unreachable = connectionTroubleAt(Date.now());
+  const question =
+    "Quiz jetzt beenden? Alle Spieler:innen werden entfernt." +
+    (unreachable ? " Die Verbindung ist gerade unterbrochen, darum erfahren sie vielleicht nichts davon." : "");
   // Confirm canceling as soon as players started to join
-  if (roster.size > 0 && !window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
-  debugLog("quiz aborted", { pin: pin.value, phase: status.value });
-  // Tells connected players the session is over so they leave their current
-  // screen too, rather than just going silent on them. A snapshot still
-  // scheduled or under way must not follow it and bring the session back.
-  cancelPendingBroadcast();
-  cancelBroadcast();
-  await publishState(pin.value, hostToken.value, {
-    phase: "finished",
-    question_index: null,
-    players: [],
-    seq: nextSeq(),
-  });
+  if (roster.size > 0 && !window.confirm(question)) return;
+  debugLog("quiz aborted", { pin: pin.value, phase: status.value, unreachable });
+  const [sessionPin, token] = [pin.value, hostToken.value];
+  const farewell: SessionSnapshot = { phase: "finished", question_index: null, players: [], seq: nextSeq() };
+  // All of this comes first: a connection that is down must not keep the
+  // teacher in the quiz, and with the heartbeat stopped, no snapshot can
+  // follow the farewell and bring the session back.
+  disconnect();
   clearHostSession();
+  resetToSetup();
+  void sayFarewell(sessionPin, token, farewell);
+}
+
+/** Tells connected players the session is over so they leave their current
+ * screen too, then releases the pin -- in that order, as a snapshot arriving
+ * after the release would claim the pin again. Best effort: a pupil this does
+ * not reach is told that the teacher has no connection, and a pin the relay
+ * never hears about expires by itself. */
+async function sayFarewell(sessionPin: string, token: string, farewell: SessionSnapshot) {
   try {
-    await endSession(pin.value, hostToken.value);
-  } finally {
-    disconnect();
-    resetToSetup();
+    await publishState(sessionPin, token, farewell);
+  } catch (e) {
+    debugLog("farewell failed", { error: describeError(e) });
   }
+  await endSession(sessionPin, token).catch((e) => console.warn("Releasing the pin failed", e));
 }
 
 onUnmounted(() => {

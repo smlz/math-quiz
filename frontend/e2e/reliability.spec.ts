@@ -278,3 +278,28 @@ test("a reveal right after a teacher reload asks first", async ({ browser }) => 
   await answered.click();
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 });
+
+test("the quiz can be cancelled while broadcasts fail", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser, false);
+  const ada = await joinByLink(browser, pin, "Ada");
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  await host.route("**/session/*/state", (route) => route.abort());
+  await expect(host.getByRole("button", { name: /Antwort zeigen/ })).toContainText("Verbindung unterbrochen", {
+    timeout: 15_000,
+  });
+
+  let warning = "";
+  host.once("dialog", async (dialog) => {
+    warning = dialog.message();
+    await dialog.accept();
+  });
+  await host.getByRole("button", { name: "Quiz abbrechen" }).click();
+  await expect(host.getByRole("button", { name: "Quiz erstellen" })).toBeVisible();
+  expect(warning).toContain("erfahren sie vielleicht nichts davon");
+  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
+
+  // The farewell never went out, so Ada is told what she can tell.
+  await expect(ada.locator(".player-app__reconnecting--host")).toContainText("nicht neu laden", { timeout: 30_000 });
+});

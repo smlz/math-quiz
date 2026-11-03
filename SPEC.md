@@ -319,7 +319,11 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    "quiz over" without a rank instead of a second, last-placed entry. Only
    the host's "End quiz" button on
    the final screen stops the broadcasts, releases the pin and returns the
-   host to the setup screen.
+   host to the setup screen. The host can also cancel the quiz at any time
+   before that. This returns to the setup screen at once, whatever the
+   connection does; telling the players and releasing the pin follow on a
+   best-effort basis, and while the connection is in trouble the confirmation
+   says that players may not hear of it.
 
 Host actions are explicit HTTP calls that publish a new state snapshot
 (`POST /api/v1/session/{pin}/state`); players see the change on their SSE
