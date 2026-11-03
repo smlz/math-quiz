@@ -456,6 +456,10 @@ What each side keeps locally:
   while pings still arrive, the player's own connection works and the host
   has gone quiet: the banner then says that the teacher has no connection
   and asks pupils to wait rather than reload — a reload helps nobody then.
+- The one failure that does not heal is a **refused host token** (HTTP 403):
+  it has expired, a day after the quiz was created, or the pin now belongs to
+  another session. The host then stops broadcasting and retrying, and says
+  that the session is no longer valid. A reload tries again.
 
 ## 5. Scoring
 

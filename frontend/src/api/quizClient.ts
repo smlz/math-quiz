@@ -430,13 +430,15 @@ const STREAM_MIN_LIFETIME_MS = 10_000;
  *
  * `onStatus` hears every change at once, without a grace period: the host
  * holds back the reveal while answers cannot arrive, and applies its own
- * grace period to the banner.
+ * grace period to the banner. `onRefused` hears that the relay refused the
+ * host token, which trying again cannot change, so the loop ends there.
  */
 export function subscribeToMessages(
   pin: string,
   hostToken: string,
   onMessage: (message: IncomingMessage) => void,
   onStatus: (status: ConnectionStatus) => void = () => {},
+  onRefused: () => void = () => {},
 ): () => void {
   const controller = new AbortController();
 
@@ -461,6 +463,11 @@ export function subscribeToMessages(
           headers: { [HOST_TOKEN_HEADER]: hostToken, Accept: "text/event-stream" },
           signal: attempt.signal,
         });
+        if (response.status === 403) {
+          debugLog("message stream refused");
+          onRefused();
+          return;
+        }
         if (!response.ok || !response.body) {
           throw new Error(`message_stream failed (${response.status})`);
         }

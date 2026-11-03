@@ -279,7 +279,7 @@ test("a reveal right after a teacher reload asks first", async ({ browser }) => 
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 });
 
-test("the quiz can be cancelled while broadcasts fail", async ({ browser }) => {
+test("the quiz can be canceled while broadcasts fail", async ({ browser }) => {
   const { host, pin } = await createQuiz(browser, false);
   const ada = await joinByLink(browser, pin, "Ada");
   await host.getByRole("button", { name: "Frage starten" }).click();
@@ -302,4 +302,36 @@ test("the quiz can be cancelled while broadcasts fail", async ({ browser }) => {
 
   // The farewell never went out, so Ada is told what she can tell.
   await expect(ada.locator(".player-app__reconnecting--host")).toContainText("nicht neu laden", { timeout: 30_000 });
+});
+
+test("a refused host token stops the retries and says so", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  await joinByLink(browser, pin, "Ada");
+  const refused = host.locator(".host-app__session-refused");
+
+  let attempts = 0;
+  const refuse = (route: Route) => {
+    attempts++;
+    return route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: '{"detail":"Invalid or missing host token"}',
+    });
+  };
+  await host.route("**/session/*/state", refuse);
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(refused).toContainText("nicht mehr gültig");
+  const attemptsThen = attempts;
+  await host.waitForTimeout(3000);
+  expect(attempts).toBe(attemptsThen);
+
+  // A reload tries again, and this time the inbox is what gets refused.
+  await host.unroute("**/session/*/state");
+  await host.route("**/session/*/message_stream", refuse);
+  await host.reload();
+  await expect(refused).toContainText("nicht mehr gültig");
+
+  await host.getByRole("button", { name: "Quiz abbrechen" }).click();
+  await expect(host.getByRole("button", { name: "Quiz erstellen" })).toBeVisible();
+  expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
 });

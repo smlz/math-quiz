@@ -171,6 +171,10 @@ function connectionTroubleAt(now: number): boolean {
   );
 }
 const connectionTrouble = computed(() => connectionTroubleAt(clock.value));
+// The relay refused the host token: it has expired, a day after the quiz was
+// created, or the pin has gone to another session. Retrying cannot change
+// that, but a reload tries again, so a false alarm costs little.
+const sessionRefused = ref(false);
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
@@ -401,7 +405,7 @@ function buildSnapshot(): SessionSnapshot {
 async function broadcast() {
   // Whatever a scheduled broadcast was going to confirm is in this one.
   cancelPendingBroadcast();
-  if (!pin.value || !hostToken.value || status.value === "setup") return;
+  if (!pin.value || !hostToken.value || status.value === "setup" || sessionRefused.value) return;
   // A change made meanwhile goes out as soon as this broadcast is done, in
   // the snapshot built then.
   if (broadcasting) {
@@ -420,6 +424,10 @@ async function broadcast() {
   } catch (e) {
     // Canceled because the session is over: nothing to retry.
     if (controller.signal.aborted) return;
+    if (e instanceof RelayError && e.status === 403) {
+      stopAfterRefusal();
+      return;
+    }
     console.warn("Snapshot broadcast failed", e);
     setBroadcastLive("reconnecting");
     scheduleBroadcast(BROADCAST_RETRY_MS);
@@ -548,9 +556,16 @@ function connect(sessionPin: string, token: string) {
   // Not connected until the stream says so. Its first opening counts as a
   // recovery: after a reload, answers sent meanwhile still have to arrive.
   inboxLive.value = "reconnecting";
-  unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, setInboxLive);
+  unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, setInboxLive, stopAfterRefusal);
   heartbeat = window.setInterval(() => void broadcast(), HEARTBEAT_MS);
   clockTimer = window.setInterval(() => (clock.value = Date.now()), 500);
+}
+
+function stopAfterRefusal() {
+  if (sessionRefused.value) return;
+  debugLog("session refused", { pin: pin.value });
+  sessionRefused.value = true;
+  disconnect();
 }
 
 function disconnect() {
@@ -870,6 +885,7 @@ function resetToSetup() {
   removed.clear();
   lastSeen.clear();
   playersOpen.value = false;
+  sessionRefused.value = false;
 }
 
 /** Host-initiated early abort, available any time a session is running.
@@ -877,7 +893,8 @@ function resetToSetup() {
  * host straight back to the editor -- there is nothing to show a rank for. */
 function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
-  const unreachable = connectionTroubleAt(Date.now());
+  const refused = sessionRefused.value;
+  const unreachable = refused || connectionTroubleAt(Date.now());
   const question =
     "Quiz jetzt beenden? Alle Spieler:innen werden entfernt." +
     (unreachable ? " Die Verbindung ist gerade unterbrochen, darum erfahren sie vielleicht nichts davon." : "");
@@ -892,7 +909,8 @@ function endQuizNow() {
   disconnect();
   clearHostSession();
   resetToSetup();
-  void sayFarewell(sessionPin, token, farewell);
+  // A refused token would be refused again.
+  if (!refused) void sayFarewell(sessionPin, token, farewell);
 }
 
 /** Tells connected players the session is over so they leave their current
@@ -919,7 +937,11 @@ onUnmounted(() => {
 
 <template>
   <div class="host-app">
-    <p v-if="connection === 'reconnecting' && status !== 'setup'" class="host-app__reconnecting">
+    <p v-if="sessionRefused && status !== 'setup'" class="host-app__reconnecting host-app__session-refused">
+      Diese Sitzung ist nicht mehr gültig, die Spieler:innen sehen nichts mehr davon. Beende das Quiz und erstelle es
+      neu.
+    </p>
+    <p v-else-if="connection === 'reconnecting' && status !== 'setup'" class="host-app__reconnecting">
       Verbindung wird wiederhergestellt …
     </p>
 
