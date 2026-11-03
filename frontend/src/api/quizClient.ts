@@ -29,6 +29,13 @@ export const STALE_AFTER_MS = 3 * HEARTBEAT_MS;
  * every stream after a few minutes and a failed publish is retried at once,
  * so short outages are routine and heal before this runs out. */
 export const RECONNECT_GRACE_MS = 5000;
+/** How long a request may take before it is given up as failed. Without a
+ * limit, a stalled connection piles up requests that all arrive minutes later
+ * at once -- and a failure that never happens is never reported either. */
+export const PUBLISH_TIMEOUT_MS = 6000;
+export const SEND_TIMEOUT_MS = 8000;
+/** Minting an identity may have to wait for a cold start of the relay. */
+export const JOIN_TIMEOUT_MS = 15_000;
 
 export const HOST_TOKEN_HEADER = "X-Host-Token";
 export const PLAYER_TOKEN_HEADER = "X-Player-Token";
@@ -180,31 +187,60 @@ export class RelayError extends Error {
   }
 }
 
-async function postJson<T>(
-  path: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-): Promise<T> {
+interface RequestOptions {
+  headers?: Record<string, string>;
+  /** Gives the request up as failed after this long. */
+  timeoutMs?: number;
+  /** Cancels the request. It then fails without a log line: whoever
+   * cancelled it no longer cares. */
+  signal?: AbortSignal;
+}
+
+async function postJson<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+  const { headers = {}, timeoutMs, signal } = options;
   const startedAt = performance.now();
   const elapsed = () => `${Math.round(performance.now() - startedAt)}ms`;
-  let response: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer =
+    timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+  const cancel = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener("abort", cancel);
   try {
-    response = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if (!timedOut && !signal?.aborted) debugLog("request failed", { path, error: describeError(e), after: elapsed() });
+      throw e;
+    }
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      debugLog("request rejected", { path, status: response.status, detail, after: elapsed() });
+      throw new RelayError(`POST ${path} failed (${response.status}): ${detail}`, response.status);
+    }
+    if (performance.now() - startedAt > SLOW_REQUEST_MS) debugLog("request slow", { path, after: elapsed() });
+    return await response.json();
   } catch (e) {
-    debugLog("request failed", { path, error: describeError(e), after: elapsed() });
-    throw e;
+    // Also while the body was still arriving.
+    if (!timedOut) throw e;
+    debugLog("request timed out", { path, after: elapsed() });
+    throw new Error(`POST ${path} timed out after ${timeoutMs} ms`);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
   }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    debugLog("request rejected", { path, status: response.status, detail, after: elapsed() });
-    throw new RelayError(`POST ${path} failed (${response.status}): ${detail}`, response.status);
-  }
-  if (performance.now() - startedAt > SLOW_REQUEST_MS) debugLog("request slow", { path, after: elapsed() });
-  return response.json();
 }
 
 export interface HostCredentials {
@@ -223,9 +259,9 @@ export interface PlayerCredentials {
 }
 
 export async function joinSession(pin: string): Promise<PlayerCredentials> {
-  const data = await postJson<{ player_id: string; player_token: string }>(
-    `/session/${pin}`,
-  );
+  const data = await postJson<{ player_id: string; player_token: string }>(`/session/${pin}`, undefined, {
+    timeoutMs: JOIN_TIMEOUT_MS,
+  });
   return { playerId: data.player_id, playerToken: data.player_token };
 }
 
@@ -248,9 +284,12 @@ export function publishState(
   pin: string,
   hostToken: string,
   snapshot: SessionSnapshot,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean }> {
   return postJson(`/session/${pin}/state`, snapshot, {
-    [HOST_TOKEN_HEADER]: hostToken,
+    headers: { [HOST_TOKEN_HEADER]: hostToken },
+    timeoutMs: PUBLISH_TIMEOUT_MS,
+    signal,
   });
 }
 
@@ -260,7 +299,8 @@ export function sendMessage(
   message: PlayerMessage,
 ): Promise<{ ok: boolean }> {
   return postJson(`/session/${pin}/message`, message, {
-    [PLAYER_TOKEN_HEADER]: playerToken,
+    headers: { [PLAYER_TOKEN_HEADER]: playerToken },
+    timeoutMs: SEND_TIMEOUT_MS,
   });
 }
 

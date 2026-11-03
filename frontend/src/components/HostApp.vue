@@ -147,6 +147,10 @@ const correctOrder = ref<string[]>([]);
 let unsubscribe: (() => void) | null = null;
 let heartbeat: number | null = null;
 let pendingBroadcast: number | null = null;
+// The broadcast under way, if any. There is only ever one: on a stalled
+// connection, more would pile up and then all arrive at once, the oldest last.
+let broadcasting: AbortController | null = null;
+let broadcastAgain = false;
 // The number of the latest snapshot (SessionSnapshot.seq). Based on the clock,
 // so that it keeps growing across a reload of this page, and on the previous
 // number, so that it does so even if the clock is set back.
@@ -331,17 +335,43 @@ async function broadcast() {
   // Whatever a scheduled broadcast was going to confirm is in this one.
   cancelPendingBroadcast();
   if (!pin.value || !hostToken.value || status.value === "setup") return;
+  // A change made meanwhile goes out as soon as this broadcast is done, in
+  // the snapshot built then.
+  if (broadcasting) {
+    broadcastAgain = true;
+    return;
+  }
+  const controller = new AbortController();
+  broadcasting = controller;
   const snapshot = buildSnapshot();
   try {
-    await publishState(pin.value, hostToken.value, snapshot);
+    await publishState(pin.value, hostToken.value, snapshot, controller.signal);
     // Repeats collapse into one line, so an unchanged heartbeat costs nothing.
     debugLog("broadcast", { phase: snapshot.phase, q: snapshot.question_index, players: snapshot.players.length });
     reportBroadcast("open");
   } catch (e) {
+    // Cancelled because the session is over: nothing to retry.
+    if (controller.signal.aborted) return;
     console.warn("Snapshot broadcast failed", e);
     reportBroadcast("reconnecting");
     scheduleBroadcast(BROADCAST_RETRY_MS);
+  } finally {
+    if (broadcasting === controller) {
+      broadcasting = null;
+    }
   }
+  if (broadcastAgain) {
+    broadcastAgain = false;
+    void broadcast();
+  }
+}
+
+/** Drops the broadcast under way, so that it cannot arrive after whatever
+ * comes next -- the end of the session, say. */
+function cancelBroadcast() {
+  broadcasting?.abort();
+  broadcasting = null;
+  broadcastAgain = false;
 }
 
 /** Broadcasts within `delayMs`, together with whatever else changes until
@@ -449,6 +479,7 @@ function disconnect() {
   unsubscribe?.();
   unsubscribe = null;
   cancelPendingBroadcast();
+  cancelBroadcast();
   reportBroadcast.cancel();
   inboxConnection.value = broadcastConnection.value = "open";
   if (heartbeat !== null) {
@@ -712,8 +743,9 @@ async function endQuizNow() {
   debugLog("quiz aborted", { pin: pin.value, phase: status.value });
   // Tells connected players the session is over so they leave their current
   // screen too, rather than just going silent on them. A snapshot still
-  // scheduled must not follow it and bring the session back.
+  // scheduled or under way must not follow it and bring the session back.
   cancelPendingBroadcast();
+  cancelBroadcast();
   await publishState(pin.value, hostToken.value, {
     phase: "finished",
     question_index: null,

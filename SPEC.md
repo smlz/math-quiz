@@ -382,6 +382,11 @@ relay durable, **reliability comes from idempotent state transfer**:
   current one. The host numbers with the larger of the previous number plus
   one and the clock, so numbers keep growing across a reload of the host
   page and a clock that is set back.
+- The host has **one broadcast in flight** at a time and gives it up after
+  6 s (a player's message after 8 s); a change made meanwhile goes out right
+  after it. Without a limit, a stalled connection piles up requests that
+  all arrive later in one burst, and a failure that never comes is never
+  reported.
 
 What each side keeps locally:
 
