@@ -436,7 +436,14 @@ What each side keeps locally:
   broadcasting again —
   there is nothing on the server to re-fetch. The quiz source is only
   re-parsed, not re-validated with Typst, since it already compiled cleanly
-  when the session was created.
+  when the session was created. **Only one tab hosts** a quiz, decided by a
+  Web Lock on its pin, which the browser releases when a tab closes or
+  crashes. Without that, a second tab on the host page would resume the same
+  session and its heartbeats would throw players back to an old phase, with
+  numbers just as new as the real ones. A second tab instead says that the
+  quiz runs elsewhere and offers to take it over: the first tab then stops,
+  and the second one loads what the first one stored. Browsers without Web
+  Locks behave as if the lock were always free.
 - Both entries are removed when the quiz is over: the player's when it sees
   the final snapshot, the host's when it closes the final screen (so a host
   reload there still restores it). The player's tab keeps its final result

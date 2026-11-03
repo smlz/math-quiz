@@ -381,3 +381,34 @@ test("a reload of the final screen keeps the rank", async ({ browser }) => {
   await other.goto(`/?pin=${pin}`);
   await expect(other.getByRole("heading", { name: "Einem Quiz beitreten" })).toBeVisible();
 });
+
+test("a second teacher tab stays out of the quiz until it takes over", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+
+  const second = await host.context().newPage();
+  await second.goto("/create");
+  test.skip(!(await second.evaluate(() => !!navigator.locks)), "this browser has no Web Locks here");
+  const notice = (page: Page) => page.getByRole("heading", { name: "Dieses Quiz läuft bereits in einem anderen Tab." });
+  await expect(notice(second)).toBeVisible();
+
+  // Longer than a heartbeat: a second host would throw Ada back to the lobby.
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  await ada.waitForTimeout(7000);
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toHaveCount(0);
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+  await expect(host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" })).toBeVisible();
+
+  // The second tab takes over, with everything the first one knew.
+  await second.getByRole("button", { name: "Hier übernehmen" }).click();
+  await expect(notice(host)).toBeVisible();
+  await second.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+
+  // A reload is no second tab, however soon it comes.
+  await second.reload();
+  await expect(second.getByRole("button", { name: "Rangliste anzeigen" })).toBeVisible();
+  await expect(notice(second)).toHaveCount(0);
+});

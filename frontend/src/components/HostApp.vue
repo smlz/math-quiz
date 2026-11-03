@@ -16,6 +16,7 @@ import {
   type Phase,
   type SessionSnapshot,
 } from "../api/quizClient";
+import { acquireHostLock, type HostLock } from "../api/hostLock";
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { addDebugSecret, debugLog, describeError, setDebugContext, startDebugLog } from "../debug/debugLog";
 import { QuizParseError } from "../quiz/errors";
@@ -175,6 +176,11 @@ const connectionTrouble = computed(() => connectionTroubleAt(clock.value));
 // created, or the pin has gone to another session. Retrying cannot change
 // that, but a reload tries again, so a false alarm costs little.
 const sessionRefused = ref(false);
+// Only one tab hosts a quiz (hostLock.ts). This one stays silent, neither
+// broadcasting nor storing anything, until it knows that it is that tab.
+let hostsHere = true;
+let hostLock: HostLock | null = null;
+const otherTabHosts = ref(false);
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
@@ -357,6 +363,8 @@ async function loadAndCreateSession() {
   hostToken.value = created.hostToken;
 
   status.value = "lobby";
+  // A pin just handed out: nobody else can hold it.
+  void acquireHostLock(created.pin, onTabLost).then((lock) => (hostLock = lock));
   connect(created.pin, created.hostToken);
   await broadcast();
 }
@@ -405,7 +413,7 @@ function buildSnapshot(): SessionSnapshot {
 async function broadcast() {
   // Whatever a scheduled broadcast was going to confirm is in this one.
   cancelPendingBroadcast();
-  if (!pin.value || !hostToken.value || status.value === "setup" || sessionRefused.value) return;
+  if (!pin.value || !hostToken.value || status.value === "setup" || sessionRefused.value || !hostsHere) return;
   // A change made meanwhile goes out as soon as this broadcast is done, in
   // the snapshot built then.
   if (broadcasting) {
@@ -593,7 +601,7 @@ function disconnect() {
 // localStorage until the host closes the quiz. That includes the final
 // screen, which keeps broadcasting after a reload too.
 function persistSession() {
-  if (!pin.value || !hostToken.value || status.value === "setup") return;
+  if (!pin.value || !hostToken.value || status.value === "setup" || !hostsHere) return;
   saveHostSession({
     pin: pin.value,
     hostToken: hostToken.value,
@@ -657,6 +665,7 @@ if (restored?.hostToken) {
     }
     lastSeq = restored.seq ?? 0;
     status.value = restored.status as Status;
+    hostsHere = false;
     addDebugSecret(restored.hostToken);
     debugLog("session restored", {
       pin: restored.pin,
@@ -666,6 +675,7 @@ if (restored?.hostToken) {
     });
   } catch (e) {
     debugLog("stored session unusable", { error: describeError(e) });
+    hostsHere = true;
     quiz.value = null;
     clearHostSession();
   }
@@ -721,9 +731,43 @@ onMounted(() => {
   // After a reload the browser holds the music back until the next click.
   detachSound = attachSound();
   if (!pin.value || !hostToken.value) return;
-  connect(pin.value, hostToken.value);
-  void broadcast();
+  void hostInThisTab(pin.value, hostToken.value);
 });
+
+/** Carries on with a restored session, unless another tab is hosting it. */
+async function hostInThisTab(sessionPin: string, token: string) {
+  const lock = await acquireHostLock(sessionPin, onTabLost);
+  if (!lock) {
+    debugLog("quiz open in another tab", { pin: sessionPin });
+    otherTabHosts.value = true;
+    stopSound();
+    return;
+  }
+  hostLock = lock;
+  hostsHere = true;
+  persistSession();
+  connect(sessionPin, token);
+  void broadcast();
+}
+
+/** Another tab has taken the quiz over, so this one stops at once. */
+function onTabLost() {
+  debugLog("quiz taken over by another tab", { pin: pin.value });
+  hostsHere = false;
+  otherTabHosts.value = true;
+  playersOpen.value = false;
+  disconnect();
+  stopSound();
+}
+
+/** The state to carry on from is what the other tab stored last, so this page
+ * is loaded anew once the other tab has stopped. */
+async function takeOverHere() {
+  if (!pin.value) return;
+  debugLog("taking the quiz over", { pin: pin.value });
+  await acquireHostLock(pin.value, () => {}, true);
+  location.reload();
+}
 
 async function startQuestion(index: number) {
   if (!quiz.value || !pin.value || !hostToken.value) return;
@@ -886,6 +930,8 @@ function resetToSetup() {
   lastSeen.clear();
   playersOpen.value = false;
   sessionRefused.value = false;
+  hostLock?.release();
+  hostLock = null;
 }
 
 /** Host-initiated early abort, available any time a session is running.
@@ -945,7 +991,15 @@ onUnmounted(() => {
       Verbindung wird wiederhergestellt …
     </p>
 
-    <template v-if="status === 'setup'">
+    <template v-if="otherTabHosts">
+      <div class="host-app__panel">
+        <h2>Dieses Quiz läuft bereits in einem anderen Tab.</h2>
+        <p>Schließe diesen Tab, oder führe das Quiz hier weiter. Der andere Tab hält dann an.</p>
+        <button type="button" @click="takeOverHere">Hier übernehmen</button>
+      </div>
+    </template>
+
+    <template v-else-if="status === 'setup'">
       <div class="host-app__setup">
         <div class="host-app__editor">
           <div class="host-app__editor-header">
