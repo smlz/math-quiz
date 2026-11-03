@@ -44,7 +44,13 @@ const SUSPENDED_AFTER_MS = 4 * TICK_MS;
 startDebugLog("player");
 
 const status = ref<Status>("join");
-const connection = ref<ConnectionStatus>("open");
+// This device's own connection, as the state stream reports it.
+const streamStatus = ref<ConnectionStatus>("open");
+// Set by `tick` once snapshots are overdue: "host" while the relay's pings
+// still arrive -- the connection works, the host has gone quiet -- and
+// "connection" when nothing arrives at all.
+const overdue = ref<"host" | "connection" | null>(null);
+const banner = computed(() => (streamStatus.value !== "open" ? "connection" : overdue.value));
 const pin = ref<string | null>(null);
 const playerId = ref<string | null>(null);
 const playerToken = ref<string | null>(null);
@@ -67,6 +73,7 @@ const joinNotice = ref<string | undefined>();
 let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
 let lastSnapshotAt = 0;
+let lastPingAt = 0;
 let lastTickAt = 0;
 // The number of the last snapshot applied. A stalled host connection can
 // deliver a backlog of old snapshots all at once, in any order; applying
@@ -77,7 +84,7 @@ let lastSeq = 0;
 // time, and waiting for one must not hold back the other.
 const lastSentAt: Record<PlayerMessage["type"], number> = { join: 0, answer: 0 };
 
-watch(connection, (state) => debugLog(state === "open" ? "banner hidden" : "banner shown"));
+watch(banner, (reason) => debugLog(reason ? "banner shown" : "banner hidden", reason ? { reason } : undefined));
 watch(joinAcknowledged, (acked) => {
   if (acked) debugLog("join confirmed", { after: sinceSent("join") });
 });
@@ -109,7 +116,7 @@ const questionInstruction = computed(() =>
  * the wait for the next. */
 function handleSnapshot(snapshot: SessionSnapshot) {
   lastSnapshotAt = Date.now();
-  connection.value = "open";
+  overdue.value = null;
 
   const me = playerId.value;
   if (!me) return;
@@ -250,9 +257,12 @@ function tick() {
     ).catch(() => {});
   }
 
-  if (now - lastSnapshotAt > STALE_AFTER_MS && connection.value === "open") {
-    debugLog("no snapshot", { for: `${now - lastSnapshotAt}ms` });
-    connection.value = "reconnecting";
+  if (now - lastSnapshotAt > STALE_AFTER_MS) {
+    // Pings prove that this device's connection works, so it is the host
+    // that has gone quiet. Saying so keeps pupils from reloading in vain.
+    const reason = now - lastPingAt <= STALE_AFTER_MS ? "host" : "connection";
+    if (overdue.value === null) debugLog("no snapshot", { for: `${now - lastSnapshotAt}ms` });
+    overdue.value = reason;
   }
 }
 
@@ -299,6 +309,8 @@ function leaveAfterRemoval() {
   revealCorrectIndex.value = null;
   myScore.value = 0;
   myRank.value = null;
+  overdue.value = null;
+  streamStatus.value = "open";
   status.value = "join";
 }
 
@@ -323,13 +335,20 @@ function onJoined(session: StoredPlayerSession) {
   // mistaken for a new one and does not clear the locked-in pick.
   currentQuestionIndex.value = session.answeredQuestionIndex;
   status.value = "lobby";
-  lastSnapshotAt = Date.now();
+  lastSnapshotAt = lastPingAt = Date.now();
+  lastSeq = 0;
 
-  unsubscribe = subscribeToState(session.pin, handleSnapshot, (state) => {
-    // A stream that has just (re)opened gets the full STALE_AFTER_MS for its
-    // first snapshot; otherwise `tick` puts the banner straight back up.
-    if (state === "open") lastSnapshotAt = Date.now();
-    connection.value = state;
+  unsubscribe = subscribeToState(session.pin, {
+    snapshot: handleSnapshot,
+    status: (state) => {
+      // A stream that has just come back gets the full STALE_AFTER_MS for
+      // its first snapshot; otherwise `tick` puts the banner straight back up.
+      if (state === "open" && streamStatus.value !== "open") lastSnapshotAt = Date.now();
+      streamStatus.value = state;
+    },
+    ping: () => {
+      lastPingAt = Date.now();
+    },
   });
   retryTimer = window.setInterval(tick, TICK_MS);
   // Nothing has been sent under this identity yet, so the join goes out now.
@@ -367,8 +386,11 @@ onUnmounted(teardown);
     <template v-else>
       <header class="player-app__header">
         <p class="player-app__nickname">{{ nickname }}</p>
-        <p v-if="connection === 'reconnecting'" class="player-app__reconnecting">
+        <p v-if="banner === 'connection'" class="player-app__reconnecting">
           Verbindung wird wiederhergestellt …
+        </p>
+        <p v-else-if="banner === 'host'" class="player-app__reconnecting player-app__reconnecting--host">
+          Die Lehrperson hat gerade keine Verbindung. Bitte warten und die Seite nicht neu laden.
         </p>
       </header>
 

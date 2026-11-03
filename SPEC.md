@@ -387,6 +387,12 @@ relay durable, **reliability comes from idempotent state transfer**:
   after it. Without a limit, a stalled connection piles up requests that
   all arrive later in one burst, and a failure that never comes is never
   reported.
+- A quiet stream carries a **`ping`** event every 5 s — an event rather
+  than an SSE comment, since `EventSource` shows the page events only. A
+  stream that has carried nothing at all for 15 s has died without saying
+  so (a connection can), and both clients open it anew; the player also
+  re-opens a stream the browser gave up on, as `EventSource` does after an
+  HTTP error instead of retrying.
 
 What each side keeps locally:
 
@@ -422,7 +428,10 @@ What each side keeps locally:
   Shorter outages, like the stream rotation above, stay unannounced. Time
   the player page spent suspended (a locked phone, a backgrounded tab) does
   not count as missed heartbeats, and neither does the time before a stream
-  that just reopened delivers its first snapshot.
+  that just reopened delivers its first snapshot. When heartbeats are missed
+  while pings still arrive, the player's own connection works and the host
+  has gone quiet: the banner then says that the teacher has no connection
+  and asks pupils to wait rather than reload — a reload helps nobody then.
 
 ## 5. Scoring
 

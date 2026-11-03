@@ -29,6 +29,12 @@ export const STALE_AFTER_MS = 3 * HEARTBEAT_MS;
  * every stream after a few minutes and a failed publish is retried at once,
  * so short outages are routine and heal before this runs out. */
 export const RECONNECT_GRACE_MS = 5000;
+/** A stream that has carried nothing for this long gets a `ping` from the
+ * relay (KEEP_ALIVE_SECONDS in quiz_relay_api.py). */
+export const KEEP_ALIVE_MS = 5000;
+/** A stream that has carried nothing at all -- no snapshot, no message, no
+ * ping -- for this long is presumed dead and opened anew. */
+export const SILENT_AFTER_MS = 3 * KEEP_ALIVE_MS;
 /** How long a request may take before it is given up as failed. Without a
  * limit, a stalled connection piles up requests that all arrive minutes later
  * at once -- and a failure that never happens is never reported either. */
@@ -306,35 +312,109 @@ export function sendMessage(
 
 // Streams
 
-/** Players read the public state stream with the native EventSource, which
- * reconnects on its own -- also every time the relay ends the stream, which
- * is why an error is only reported once it outlasts RECONNECT_GRACE_MS. */
-export function subscribeToState(
-  pin: string,
-  onSnapshot: (snapshot: SessionSnapshot) => void,
-  onStatus: (status: ConnectionStatus) => void = () => {},
-): () => void {
-  const source = new EventSource(`${API_BASE}/session/${pin}/state_stream`);
-  const report = reportAfterGrace(onStatus);
+// EventSource.readyState, spelled out so tests can stand in a fake.
+const CONNECTING = 0;
+const CLOSED = 2;
+/** How soon a state stream is opened anew once the browser has given up on
+ * it, at first; the wait doubles with every failure in a row, up to the
+ * maximum. */
+const REOPEN_MIN_MS = 1000;
+const REOPEN_MAX_MS = 10_000;
+/** How often the state stream checks that it still carries anything. */
+const WATCHDOG_MS = 1000;
 
-  source.addEventListener("state", (event) => {
-    report("open");
-    onSnapshot(JSON.parse((event as MessageEvent).data));
-  });
-  source.onopen = () => {
-    debugLog("state stream open");
+export interface StateHandlers {
+  snapshot: (snapshot: SessionSnapshot) => void;
+  /** The connection itself, reported once it has been down for
+   * RECONNECT_GRACE_MS. It says nothing about whether the host is there. */
+  status?: (status: ConnectionStatus) => void;
+  /** A keep-alive from the relay: the connection works, even while the host
+   * sends nothing. */
+  ping?: () => void;
+}
+
+/** Players read the public state stream with the native EventSource. It
+ * reconnects on its own after a network error -- also every time the relay
+ * ends the stream, which is why an error is only reported once it outlasts
+ * RECONNECT_GRACE_MS. Two cases it does not heal are handled here: an HTTP
+ * error ends it for good, and a connection that died silently never errors
+ * at all, it just stops carrying anything, not even the relay's pings. */
+export function subscribeToState(pin: string, handlers: StateHandlers): () => void {
+  const report = reportAfterGrace(handlers.status ?? (() => {}));
+  let source: EventSource | null = null;
+  let lastFrameAt = Date.now();
+  let lastCheckAt = Date.now();
+  let reopenDelay = REOPEN_MIN_MS;
+  let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const alive = () => {
+    lastFrameAt = Date.now();
+    reopenDelay = REOPEN_MIN_MS;
     report("open");
   };
-  // The relay ends every stream after a few minutes, so one error per
-  // rotation is routine; CONNECTING means the browser is already retrying.
-  source.onerror = () => {
-    debugLog("state stream error", { readyState: ["connecting", "open", "closed"][source.readyState] });
+
+  function open() {
+    reopenTimer = null;
+    lastFrameAt = Date.now();
+    const current = new EventSource(`${API_BASE}/session/${pin}/state_stream`);
+    source = current;
+    current.addEventListener("state", (event) => {
+      alive();
+      handlers.snapshot(JSON.parse((event as MessageEvent).data));
+    });
+    current.addEventListener("ping", () => {
+      alive();
+      handlers.ping?.();
+    });
+    current.onopen = () => {
+      debugLog("state stream open");
+      // The first frame gets its full time from here on.
+      lastFrameAt = Date.now();
+      report("open");
+    };
+    // The relay ends every stream after a few minutes, so one error per
+    // rotation is routine; CONNECTING means the browser is already retrying.
+    current.onerror = () => {
+      debugLog("state stream error", { readyState: ["connecting", "open", "closed"][current.readyState] });
+      report("reconnecting");
+      if (current.readyState === CLOSED) reopenLater();
+    };
+  }
+
+  function reopenLater() {
+    if (stopped || reopenTimer !== null) return;
+    source?.close();
+    source = null;
+    debugLog("state stream reopens", { in: `${reopenDelay}ms` });
+    reopenTimer = setTimeout(open, reopenDelay);
+    reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
+  }
+
+  const watchdog = setInterval(() => {
+    const now = Date.now();
+    // A page that was suspended saw nothing because it ran nothing.
+    if (now - lastCheckAt > 4 * WATCHDOG_MS) lastFrameAt = now;
+    lastCheckAt = now;
+    if (!source || now - lastFrameAt <= SILENT_AFTER_MS) return;
+    // Open but silent, or stuck connecting: either way nothing gets through.
+    debugLog("state stream silent", {
+      for: `${now - lastFrameAt}ms`,
+      readyState: source.readyState === CONNECTING ? "connecting" : "open",
+    });
     report("reconnecting");
-  };
+    reopenLater();
+  }, WATCHDOG_MS);
+
+  open();
 
   return () => {
+    stopped = true;
+    clearInterval(watchdog);
+    if (reopenTimer !== null) clearTimeout(reopenTimer);
     report.cancel();
-    source.close();
+    source?.close();
+    source = null;
   };
 }
 
@@ -344,7 +424,9 @@ const STREAM_MIN_LIFETIME_MS = 10_000;
 /**
  * The host reads its inbox with `fetch` instead of EventSource, because the
  * stream is host-only and EventSource cannot send an auth header. That costs
- * the automatic reconnect, hence the loop below.
+ * the automatic reconnect, hence the loop below. A connection that carries
+ * nothing for SILENT_AFTER_MS -- the relay pings a quiet stream every few
+ * seconds -- has died without saying so, and is replaced.
  */
 export function subscribeToMessages(
   pin: string,
@@ -357,18 +439,33 @@ export function subscribeToMessages(
 
   void (async () => {
     while (!controller.signal.aborted) {
+      const attempt = new AbortController();
+      const cancel = () => attempt.abort();
+      controller.signal.addEventListener("abort", cancel);
+      let silent = false;
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      // Armed before the request, so a reconnect that hangs is caught too.
+      const feed = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => {
+          silent = true;
+          attempt.abort();
+        }, SILENT_AFTER_MS);
+      };
+      feed();
       try {
         const response = await fetch(`${API_BASE}/session/${pin}/message_stream`, {
           headers: { [HOST_TOKEN_HEADER]: hostToken, Accept: "text/event-stream" },
-          signal: controller.signal,
+          signal: attempt.signal,
         });
         if (!response.ok || !response.body) {
           throw new Error(`message_stream failed (${response.status})`);
         }
         debugLog("message stream open");
         report("open");
+        feed();
         const openedAt = Date.now();
-        for await (const frame of readEventStream(response.body)) {
+        for await (const frame of readEventStream(response.body, feed)) {
           if (frame.event === "message") onMessage(JSON.parse(frame.data));
         }
         debugLog("message stream ended", { after: `${Math.round((Date.now() - openedAt) / 1000)}s` });
@@ -380,9 +477,14 @@ export function subscribeToMessages(
         }
       } catch (e) {
         if (controller.signal.aborted) return;
-        debugLog("message stream failed", { error: describeError(e) });
         report("reconnecting");
+        debugLog("message stream failed", {
+          error: silent ? `nothing received for ${SILENT_AFTER_MS / 1000}s` : describeError(e),
+        });
         await sleep(1000);
+      } finally {
+        clearTimeout(watchdog);
+        controller.signal.removeEventListener("abort", cancel);
       }
     }
   })();
@@ -399,9 +501,11 @@ interface StreamFrame {
 }
 
 /** Minimal SSE parser: enough for the frames the relay emits (one `event:`
- * and one `data:` line, plus `:` keep-alive comments). */
+ * and one `data:` line, plus `:` comments). `onChunk` hears of every chunk
+ * that arrives, whole frame or not, as a sign of life. */
 async function* readEventStream(
   body: ReadableStream<Uint8Array>,
+  onChunk: () => void = () => {},
 ): AsyncGenerator<StreamFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -410,6 +514,7 @@ async function* readEventStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) return;
+    onChunk();
     buffer += decoder.decode(value, { stream: true });
 
     let boundary: number;

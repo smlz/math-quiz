@@ -4,6 +4,8 @@ import {
   rankForScore,
   reportAfterGrace,
   revealOutcome,
+  SILENT_AFTER_MS,
+  subscribeToState,
   type ConnectionStatus,
   type SessionSnapshot,
 } from "./quizClient";
@@ -71,6 +73,130 @@ describe("revealOutcome", () => {
     expect(revealOutcome(reveal([]), "ada", 2)).toBe("lost");
     expect(revealOutcome(reveal([]), "ada", 0)).toBe("wrong");
     expect(revealOutcome(reveal([]), "ada", null)).toBe("none");
+  });
+});
+
+/** Stands in for the browser's EventSource, which Node does not have. */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  closed = false;
+  private listeners = new Map<string, ((event: { data: string }) => void)[]>();
+
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: { data: string }) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  close() {
+    this.closed = true;
+    this.readyState = 2;
+  }
+
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  emit(type: string, data: unknown) {
+    for (const listener of this.listeners.get(type) ?? []) listener({ data: JSON.stringify(data) });
+  }
+
+  fail(readyState: number) {
+    this.readyState = readyState;
+    this.onerror?.();
+  }
+}
+
+describe("subscribeToState", () => {
+  let snapshots: SessionSnapshot[];
+  let pings: number;
+  let statuses: ConnectionStatus[];
+  let stop: () => void;
+  const latest = () => FakeEventSource.instances.at(-1)!;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    FakeEventSource.instances = [];
+    snapshots = [];
+    pings = 0;
+    statuses = [];
+    stop = subscribeToState("123456", {
+      snapshot: (snapshot) => snapshots.push(snapshot),
+      status: (status) => statuses.push(status),
+      ping: () => pings++,
+    });
+    latest().open();
+  });
+
+  afterEach(() => {
+    stop();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("passes snapshots and pings on", () => {
+    latest().emit("state", { phase: "lobby", question_index: null, players: [] });
+    latest().emit("ping", {});
+    expect(snapshots).toHaveLength(1);
+    expect(pings).toBe(1);
+  });
+
+  it("leaves a dropped connection to the browser's own reconnect", () => {
+    latest().fail(0);
+    vi.advanceTimersByTime(3000);
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("opens a new stream once the browser has given up on one", () => {
+    // An HTTP error, say: EventSource never tries again by itself.
+    latest().fail(2);
+    vi.advanceTimersByTime(1000);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    latest().open();
+    latest().emit("ping", {});
+    expect(statuses.at(-1)).toBe("open");
+  });
+
+  it("waits longer after every failure in a row", () => {
+    latest().fail(2);
+    vi.advanceTimersByTime(1000);
+    latest().fail(2);
+    vi.advanceTimersByTime(1000);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    vi.advanceTimersByTime(1000);
+    expect(FakeEventSource.instances).toHaveLength(3);
+  });
+
+  it("replaces a stream that carries nothing, not even pings", () => {
+    vi.advanceTimersByTime(SILENT_AFTER_MS + 1000);
+    expect(FakeEventSource.instances[0].closed).toBe(true);
+    vi.advanceTimersByTime(1000);
+    expect(FakeEventSource.instances).toHaveLength(2);
+  });
+
+  it("keeps a stream that the relay's pings show to be alive", () => {
+    for (let second = 0; second < 30; second += 5) {
+      vi.advanceTimersByTime(5000);
+      latest().emit("ping", {});
+    }
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("stops for good when unsubscribed", () => {
+    stop();
+    vi.advanceTimersByTime(60_000);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0].closed).toBe(true);
   });
 });
 
