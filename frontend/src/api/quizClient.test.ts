@@ -245,7 +245,7 @@ describe("reportAfterGrace", () => {
     expect(seen).toEqual(["reconnecting"]);
   });
 
-  it("forgets a pending outage when cancelled", () => {
+  it("forgets a pending outage when canceled", () => {
     const report = reportAfterGrace(record, 5000);
     report("reconnecting");
     report.cancel();

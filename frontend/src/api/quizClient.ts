@@ -9,7 +9,7 @@
 // every few seconds regardless, so a dropped frame costs at most one
 // heartbeat. Nothing here replays, buffers or acknowledges anything. Snapshots
 // are numbered, so one that arrives late -- after a stalled connection let a
-// backlog through all at once -- is recognised and dropped.
+// backlog through all at once -- is recognized and dropped.
 
 import { debugLog, describeError } from "../debug/debugLog";
 
@@ -198,7 +198,7 @@ interface RequestOptions {
   /** Gives the request up as failed after this long. */
   timeoutMs?: number;
   /** Cancels the request. It then fails without a log line: whoever
-   * cancelled it no longer cares. */
+   * canceled it no longer cares. */
   signal?: AbortSignal;
 }
 

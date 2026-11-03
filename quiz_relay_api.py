@@ -15,7 +15,7 @@ it is what stops a host token from outliving its session: pins are only six
 digits and get reused, so a token signed over the pin alone would also unlock
 every later session that draws the same pin. A host releases its pin when the
 quiz finishes, and a restart or scale-to-zero purges whatever was left
-dangling -- the first valid host token seen for a pin afterwards claims it
+dangling -- the first valid host token seen for a pin afterward claims it
 again (see `_require_host`).
 
 Pins are a finite resource, so the other exception is a per-address rate

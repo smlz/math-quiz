@@ -486,7 +486,7 @@ This is what makes a restart or a scale-to-zero cold start survivable: a
 valid token is the only thing needed to keep using a session, so a
 freshly-started replica happily serves a session it has no record of ever
 minting. Verification needs a stable `SERVER_SECRET` env var; without one a
-random secret is generated per process, which is the right behaviour locally
+random secret is generated per process, which is the right behavior locally
 and in tests.
 
 ### 6.2 State
@@ -724,7 +724,7 @@ purges the whole map.
   for a staging deployment. Only the methods and headers actually used are
   allowed, and credentialed requests are not — identity travels in
   `X-Host-Token` / `X-Player-Token`, never in a cookie, so nothing is
-  attached to a cross-site request automatically. This is defence in depth
+  attached to a cross-site request automatically. This is defense in depth
   rather than access control: the pin and tokens are what actually protect
   a session (§4.2), since a non-browser client ignores CORS entirely.
 - Reasonable input validation: PIN and token shape are checked before any
@@ -733,7 +733,7 @@ purges the whole map.
   host ignores messages from senders it has not seen join, and answers for
   the wrong question index. Since anyone who knows the pin can mint a token
   and send any JSON object, the host treats every payload as untrusted: a
-  nickname must be a string; it is normalised (NFKC), stripped of invisible
+  nickname must be a string; it is normalized (NFKC), stripped of invisible
   and direction-override characters and of excess combining marks, cut to 30
   characters, and numbered if the name is already taken ("Ada (2)"), so
   nobody can pass as a classmate on the projector. An id that has joined
@@ -864,7 +864,7 @@ stateless parsing logic before the stateful real-time game loop:
 - Parser (step 1): unit tests, no I/O.
 - Relay (step 3): integration tests against the FastAPI app (httpx
   `AsyncClient`). Note that `ASGITransport` buffers the whole response, so
-  an endless SSE generator hangs it — stream behaviour is tested against the
+  an endless SSE generator hangs it — stream behavior is tested against the
   fan-out object directly, and only end-to-end in step 6.
 - Host/player apps (steps 4–5): component tests for the phase transitions
   (§4.1) and scoring (§5) in isolation from rendering.
@@ -919,7 +919,7 @@ no state at all (§6.1).
   the host dedupes by member id. At-least-once, with the host as the durable
   store. No replay log, no `Last-Event-ID` — a lost message costs at most
   one heartbeat (§4.3). Snapshots are numbered, so one that arrives late is
-  recognised and dropped.
+  recognized and dropped.
 - Two SSE endpoints per session: a public player stream (host → all) and a
   host-only inbox (players → host). The host reads its inbox via `fetch` +
   `ReadableStream` so the token travels in a header; `EventSource` cannot
@@ -931,7 +931,7 @@ no state at all (§6.1).
   from a dead connection.
 - Out of scope: disconnect/presence detection, rate limiting beyond session
   creation, non-idempotent
-  one-shot effects, replay as a latency optimisation (§10).
+  one-shot effects, replay as a latency optimization (§10).
 
 An earlier proof-of-concept sketch — a multi-threaded `wau` backend using
 its built-in publish/subscribe and SSE endpoint, hosted on the local machine

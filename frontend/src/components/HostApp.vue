@@ -418,7 +418,7 @@ async function broadcast() {
     debugLog("broadcast", { phase: snapshot.phase, q: snapshot.question_index, players: snapshot.players.length });
     setBroadcastLive("open");
   } catch (e) {
-    // Cancelled because the session is over: nothing to retry.
+    // Canceled because the session is over: nothing to retry.
     if (controller.signal.aborted) return;
     console.warn("Snapshot broadcast failed", e);
     setBroadcastLive("reconnecting");
@@ -874,7 +874,7 @@ function resetToSetup() {
  * host straight back to the editor -- there is nothing to show a rank for. */
 async function endQuizNow() {
   if (!pin.value || !hostToken.value) return;
-  // Confirm cancelling as soon as players started to join
+  // Confirm canceling as soon as players started to join
   if (roster.size > 0 && !window.confirm("Quiz jetzt beenden? Alle Spieler:innen werden entfernt.")) return;
   debugLog("quiz aborted", { pin: pin.value, phase: status.value });
   // Tells connected players the session is over so they leave their current

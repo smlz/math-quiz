@@ -114,7 +114,7 @@ function syncScroll(event: Event) {
   background: var(--accent-bg);
 }
 
-/* Colour only: bold or italic could change glyph widths and pull the two
+/* Color only: bold or italic could change glyph widths and pull the two
    layers apart. */
 .typst-editor :deep(.tok-comment) {
   color: var(--tok-comment);

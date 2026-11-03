@@ -260,7 +260,7 @@ async def test_no_subscribers_leaves_no_topics_behind(client):
     assert relay.fanout._queues == {}
 
 
-# Authorisation
+# Authorization
 
 
 async def test_publish_state_requires_the_host_token(client):

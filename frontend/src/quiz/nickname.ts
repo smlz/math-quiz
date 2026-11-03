@@ -11,7 +11,7 @@ export const MAX_NICKNAME_LENGTH = 30;
 // and unassigned code points: all invisible or meaningless on a name tag.
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}]/gu;
 // Two marks per letter covers real names (Vietnamese stacks two); more is
-// "Zalgo" text spilling over its neighbours.
+// "Zalgo" text spilling over its neighbors.
 const EXCESS_MARKS = /(\p{M}{2})\p{M}+/gu;
 
 const clean = (raw: string): string =>

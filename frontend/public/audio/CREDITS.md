@@ -12,7 +12,7 @@ can be found again. “C64 Happy Loop” is licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), which requires the
 attribution below; the app's footer links to this file for it.
 
-Each clip was levelled with ffmpeg (music to −18 LUFS, cheers to −22 LUFS,
+Each clip was leveled with ffmpeg (music to −18 LUFS, cheers to −22 LUFS,
 the applause to −14 LUFS) and encoded as 128 kbit/s MP3; nothing else was
 changed except as noted.
 

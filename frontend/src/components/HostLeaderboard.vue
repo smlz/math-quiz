@@ -25,7 +25,7 @@ const TIMING = {
   gainLead: 200, // the "+12" is readable before its score starts counting
   count: 900, // counting a score up
   settle: 300, // pause between the points and the reordering
-  move: 900, // rows travelling to their new places
+  move: 900, // rows traveling to their new places
   swap: 160, // a rank number fading out, and again fading back in
   linger: 900, // how long the "+12" stays once everything has settled
   fade: 300, // "+12" fading out, ▲/▼ fading in

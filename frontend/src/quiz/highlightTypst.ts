@@ -1,7 +1,7 @@
 // Syntax highlighting for the host's quiz editor. This is a single linear scan
 // that tracks Typst's three modes (markup, math, code) with a stack of open
-// brackets. That is enough to colour real quizzes correctly. It is not a full
-// parse: input that doesn't compile may come out coloured oddly, but never
+// brackets. That is enough to color real quizzes correctly. It is not a full
+// parse: input that doesn't compile may come out colored oddly, but never
 // with text lost or out of place.
 //
 // The result is inserted as HTML, so every piece of source text goes through
@@ -165,7 +165,7 @@ export function highlightTypst(source: string): string {
     }
   }
 
-  /** An identifier in code, coloured by what it is and what follows it. */
+  /** An identifier in code, colored by what it is and what follows it. */
   function codeIdentifier(name: string) {
     const after = source[i + name.length];
     let tokenClass: TokenClass | null = null;

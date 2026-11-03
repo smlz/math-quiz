@@ -40,7 +40,7 @@ describe("highlightTypst", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("colours a question call", () => {
+  it("colors a question call", () => {
     expect(tokens('#question(\n  correct: "C",\n  prompt: [Was ist $sqrt(x^2)$?],\n)')).toEqual([
       ["function", "#question"],
       ["key", "correct"],
@@ -78,7 +78,7 @@ describe("highlightTypst", () => {
     ]);
   });
 
-  it("colours comments, nested block comments and escapes", () => {
+  it("colors comments, nested block comments and escapes", () => {
     expect(tokens("a // b\n/* c /* d */ e */ \\# f")).toEqual([
       ["comment", "// b"],
       ["comment", "/* c /* d */ e */"],

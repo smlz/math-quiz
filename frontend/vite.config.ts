@@ -67,7 +67,7 @@ function sourceVersion(): { commit: string | null; tag: string | null } {
 
 /**
  * Adds a Content-Security-Policy <meta> to the built index.html (GitHub Pages
- * cannot send headers). Defence in depth behind the SVG sanitizer: no
+ * cannot send headers). Defense in depth behind the SVG sanitizer: no
  * injected or inline script runs -- `javascript:` URLs included -- except the
  * page's own inline scripts, allowed by hash. connect-src has to stay open to
  * any https origin, because a quiz may be fetched from any `?src=` URL.
