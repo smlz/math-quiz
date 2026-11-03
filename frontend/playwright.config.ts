@@ -31,7 +31,9 @@ export default defineConfig({
   },
   use: {
     baseURL: "http://127.0.0.1:5173",
-    trace: "retain-on-failure",
+    // Recording every test is slow, and hardly any of them ever need it. A
+    // local run has no retries: add `--trace on` to look into a failure.
+    trace: "on-first-retry",
   },
   // Players join on phones, and every iOS browser runs on WebKit. CI runs
   // each project as its own job (see .github/workflows/ci.yml).
