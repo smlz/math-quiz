@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { loadMathQuiz } from "./mathQuiz";
 
 // What the host screen plays and when (src/sound/hostSound.ts). Headless

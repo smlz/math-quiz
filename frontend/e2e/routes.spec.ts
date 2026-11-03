@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // Players get the site root, the host lives at /create (SPEC.md §8).
 

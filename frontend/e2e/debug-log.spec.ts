@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // The diagnostic log is recorded on every device and leaves it only by hand,
 // via /debug (see src/debug/debugLog.ts). A pupil's log and the teacher's

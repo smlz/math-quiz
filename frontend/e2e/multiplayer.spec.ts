@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { loadMathQuiz } from "./mathQuiz";
 
 // Full 3-question, 2-player game driven through real browser tabs (SPEC.md

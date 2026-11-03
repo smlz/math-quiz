@@ -6,7 +6,7 @@ import {
   type BrowserContext,
   type Page,
   type Route,
-} from "@playwright/test";
+} from "./fixtures";
 
 // What a classroom does to a quiz: pupils reload, type the pin by hand,
 // end up in the roster twice, and the teacher's laptop loses its Wi-Fi.

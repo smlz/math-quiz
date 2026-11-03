@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // Creating a session can fail after the quiz itself compiled fine; the host
 // must say why instead of silently staying on the setup screen.

@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "./fixtures";
 
 // Anyone who knows (or guesses) a pin can mint a player token and send the
 // host arbitrary JSON, bypassing the player UI entirely. These tests talk to

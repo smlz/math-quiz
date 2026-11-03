@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("host removes a player, who can rejoin under a new name", async ({ browser }) => {
   const host = await (await browser.newContext()).newPage();
