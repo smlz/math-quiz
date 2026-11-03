@@ -3,11 +3,13 @@ import { computed, onUnmounted, ref, watch } from "vue";
 import {
   pointsForReveal,
   rankForScore,
+  revealOutcome,
   sendMessage,
   subscribeToState,
   STALE_AFTER_MS,
   type ConnectionStatus,
   type PlayerMessage,
+  type RevealOutcome,
   type SessionSnapshot,
 } from "../api/quizClient";
 import {
@@ -53,6 +55,7 @@ const answeredQuestionIndex = ref<number | null>(null);
 const joinAcknowledged = ref(false);
 const answerAcknowledged = ref(false);
 const lastPoints = ref(0);
+const revealResult = ref<RevealOutcome>("none");
 const revealCorrectIndex = ref<number | null>(null);
 const myScore = ref(0);
 const myRank = ref<number | null>(null);
@@ -84,6 +87,16 @@ function sinceSent(kind: PlayerMessage["type"]): string {
 // except leaderboard, which aligns to the top (bottom stays reserved/empty,
 // matching the host's button-anchored-to-bottom layout).
 const isCenteredState = computed(() => status.value === "lobby" || status.value === "finished");
+
+// "Arrived" only once a snapshot shows that the host has the answer: until
+// then it may still be lost, and the reveal would come as a surprise.
+const questionInstruction = computed(() =>
+  selectedIndex.value === null
+    ? "Jetzt antworten!"
+    : answerAcknowledged.value
+      ? "Antwort angekommen — warte auf Auflösung…"
+      : "Antwort wird gesendet …",
+);
 
 /** The only thing that drives this screen. Every snapshot is complete, so it
  * is applied from scratch rather than merged -- missing one costs nothing but
@@ -134,6 +147,7 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       // Recomputed from every repeat of the snapshot rather than added up:
       // a repeat, a reload or a missed reveal cannot skew anything.
       lastPoints.value = pointsForReveal(snapshot.players, me);
+      revealResult.value = revealOutcome(snapshot, me, selectedIndex.value);
       applyScores(snapshot.scores, me);
       // The totals cover everyone on the host's roster, right or wrong, so
       // having one proves the join landed -- a join left unconfirmed by the
@@ -270,6 +284,7 @@ function leaveAfterRemoval() {
   joinAcknowledged.value = false;
   answerAcknowledged.value = false;
   lastPoints.value = 0;
+  revealResult.value = "none";
   revealCorrectIndex.value = null;
   myScore.value = 0;
   myRank.value = null;
@@ -353,15 +368,24 @@ onUnmounted(teardown);
         </div>
 
         <template v-else-if="status === 'question'">
-          <p class="player-app__instruction">
-            {{ selectedIndex !== null ? "Antwort abgeschickt — warte auf Auflösung…" : "Jetzt antworten!" }}
-          </p>
+          <p class="player-app__instruction">{{ questionInstruction }}</p>
           <PlayerQuestion :selected-index="selectedIndex" @answer="answer" />
         </template>
 
         <template v-else-if="status === 'reveal'">
-          <h2 v-if="lastPoints > 0" class="player-app__instruction player-app__reveal-correct">
+          <h2 v-if="revealResult === 'correct'" class="player-app__instruction player-app__reveal-correct">
             Richtig! +{{ lastPoints }} Punkte
+          </h2>
+          <!-- Not "wrong": the pick may well have been right, and the pupil
+               should know that it was the connection that cost the points. -->
+          <h2
+            v-else-if="revealResult === 'lost'"
+            class="player-app__instruction player-app__reveal-wrong player-app__reveal-lost"
+          >
+            Deine Antwort ist nicht rechtzeitig angekommen. +0 Punkte
+          </h2>
+          <h2 v-else-if="revealResult === 'none'" class="player-app__instruction player-app__reveal-wrong">
+            Keine Antwort. +0 Punkte
           </h2>
           <h2 v-else class="player-app__instruction player-app__reveal-wrong">Falsch. +0 Punkte</h2>
           <p class="player-app__total-score">Gesamtpunktzahl: {{ myScore }}</p>

@@ -66,6 +66,9 @@ export interface SessionSnapshot {
    * A removed player's device drops its identity and offers to join again
    * under a new name; the host ignores the old id from then on. */
   removed?: string[];
+  /** Reveal only: everyone whose answer reached the host, right or wrong, so
+   * a player can tell "wrong" from "never arrived". */
+  answered?: string[];
 }
 
 export type PlayerMessage =
@@ -96,6 +99,26 @@ export function pointsForReveal(correctPlayerIds: string[], playerId: string): n
  * share a rank and the next score skips ahead (1, 2, 2, 4). */
 export function rankForScore(scores: number[], score: number): number {
   return 1 + scores.filter((other) => other > score).length;
+}
+
+/** What a player is told when the answer is revealed. */
+export type RevealOutcome = "correct" | "wrong" | "lost" | "none";
+
+/** `lost`: the player picked an option, but the host never got it -- which
+ * must not be passed off as a wrong answer. `none`: no pick at all. */
+export function revealOutcome(
+  snapshot: SessionSnapshot,
+  playerId: string,
+  selectedIndex: number | null,
+): RevealOutcome {
+  if (snapshot.players.includes(playerId)) return "correct";
+  // From a host that does not send `answered`, only a right pick that is
+  // missing from the correct ones is known for certain to have been lost.
+  const arrived = snapshot.answered
+    ? snapshot.answered.includes(playerId)
+    : selectedIndex !== null && selectedIndex !== snapshot.correct_index;
+  if (arrived) return "wrong";
+  return selectedIndex === null ? "none" : "lost";
 }
 
 export type ConnectionStatus = "open" | "reconnecting";

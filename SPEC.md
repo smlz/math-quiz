@@ -271,15 +271,19 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    during this phase (§8) — only the aggregate answered count — and the
    per-option breakdown appears once the host reveals (step 3).
 3. **Question reveal**: triggered by the host clicking "Show answer". The
-   host broadcasts the correct option index and the list of players who
-   answered correctly, in arrival order. Per-option counts are computed and
+   host broadcasts the correct option index, the list of players who
+   answered correctly, in arrival order, and who answered at all.
+   Per-option counts are computed and
    shown **host-side only**, never sent to players (§8). The player screen
    now also highlights which button was correct: the correct button gets a
    ring highlight (plus a green checkmark if that's also the player's own
    pick); the remaining, incorrect options are shaded/dimmed; and if the
    player picked the wrong one, their own picked button additionally gets an
    outline plus a red-cross marker — alongside the correct/incorrect text
-   and points earned (§8).
+   and points earned (§8). A pick the host never received is **not** called
+   wrong: the player is told that the answer did not arrive in time (with
+   the checkmark on the pick if it was right), and a player who picked
+   nothing is told so.
 4. **Leaderboard**: host clicks "Show leaderboard" and broadcasts the
    players in rank order. The host screen shows the **top 5** by cumulative
    score with nicknames and points; each player sees only their own rank,
@@ -489,6 +493,8 @@ class SessionSnapshot(TypedDict):
     scores: NotRequired[dict[str, int]]  # reveal, leaderboard, finished:
                                          # player_id -> cumulative score
     removed: NotRequired[list[str]]   # players the host removed
+    answered: NotRequired[list[str]]  # reveal only: everyone whose answer
+                                      # reached the host, right or wrong
 ```
 
 `players` carries a different meaning per phase, which is what keeps it this
@@ -498,7 +504,7 @@ small:
 |-------|--------------|--------------------|
 | `lobby` | everyone who has joined | "my join landed" |
 | `question` | everyone who has answered | "my answer landed" |
-| `reveal` | who was correct, in arrival order | correct? → am I in it; points → my index (§5); total → `scores` |
+| `reveal` | who was correct, in arrival order | correct? → am I in it; points → my index (§5); total → `scores`; did my answer arrive? → `answered` |
 | `leaderboard` | everyone, in rank order | total and rank → `scores` |
 | `finished` | everyone, in rank order | final total and rank → `scores` |
 
@@ -599,8 +605,9 @@ purges the whole map.
   option text/math/figures are ever rendered on the player device (that
   content is read off the shared host screen, §4.1). The player's nickname
   is pinned at the top of the screen at all times; directly below it,
-  instructional status text (e.g. "Please answer now!", "Answer submitted
-  — waiting for reveal…", "Correct! +N pts") appears above the answer
+  instructional status text (e.g. "Please answer now!", "Sending answer…"
+  until a snapshot shows the host has it, then "Answer arrived — waiting
+  for reveal…", "Correct! +N pts") appears above the answer
   buttons, which are **square** (2×2 grid, width-driven) and anchored to
   the bottom edge of the screen (no fixed/narrow button column) so they're
   easy to tap on a phone. Tapping a button submits the answer immediately, disables all

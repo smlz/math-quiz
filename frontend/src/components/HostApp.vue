@@ -300,7 +300,11 @@ function buildSnapshot(): SessionSnapshot {
     question_index: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
     players,
     ...(phase === "reveal" && currentQuestion.value
-      ? { correct_index: currentQuestion.value.correctIndex }
+      ? {
+          correct_index: currentQuestion.value.correctIndex,
+          // So that an answer that never arrived is not taken for a wrong one.
+          answered: [...answers.keys()],
+        }
       : {}),
     ...(phase === "reveal" || phase === "leaderboard" || phase === "finished"
       ? { scores: Object.fromEntries(standings.value.map((entry) => [entry.player_id, entry.score])) }

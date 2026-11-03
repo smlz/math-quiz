@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rankForScore, reportAfterGrace, type ConnectionStatus } from "./quizClient";
+import {
+  rankForScore,
+  reportAfterGrace,
+  revealOutcome,
+  type ConnectionStatus,
+  type SessionSnapshot,
+} from "./quizClient";
 
 describe("rankForScore", () => {
   const scores = [36, 22, 22, 10, 0];
@@ -15,6 +21,41 @@ describe("rankForScore", () => {
 
   it("ranks everyone first when all are tied", () => {
     expect(rankForScore([10, 10, 10], 10)).toBe(1);
+  });
+});
+
+describe("revealOutcome", () => {
+  const reveal = (players: string[], answered?: string[]): SessionSnapshot => ({
+    phase: "reveal",
+    question_index: 0,
+    players,
+    correct_index: 2,
+    answered,
+  });
+
+  it("is correct for a player on the list of correct answers", () => {
+    expect(revealOutcome(reveal(["ada"], ["ada"]), "ada", 2)).toBe("correct");
+  });
+
+  it("is wrong for an answer the host got", () => {
+    expect(revealOutcome(reveal([], ["ada"]), "ada", 0)).toBe("wrong");
+    // Even if this device has forgotten its pick.
+    expect(revealOutcome(reveal([], ["ada"]), "ada", null)).toBe("wrong");
+  });
+
+  it("is lost for a pick the host never got, right or wrong", () => {
+    expect(revealOutcome(reveal([], []), "ada", 2)).toBe("lost");
+    expect(revealOutcome(reveal([], []), "ada", 0)).toBe("lost");
+  });
+
+  it("is none without a pick", () => {
+    expect(revealOutcome(reveal([], []), "ada", null)).toBe("none");
+  });
+
+  it("only calls a right pick lost when the host does not say who answered", () => {
+    expect(revealOutcome(reveal([]), "ada", 2)).toBe("lost");
+    expect(revealOutcome(reveal([]), "ada", 0)).toBe("wrong");
+    expect(revealOutcome(reveal([]), "ada", null)).toBe("none");
   });
 });
 

@@ -196,11 +196,11 @@ test("host and player recover from a reload mid-quiz", async ({ browser }) => {
 
   await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
   await answerOption(ada, 1);
-  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort abgeschickt");
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
 
   // --- Player reload: same identity, same score, answer still locked in. ---
   await ada.reload();
-  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort abgeschickt");
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
   await expect(ada.locator(".player-app__nickname")).toHaveText("Ada");
 
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
