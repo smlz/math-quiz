@@ -138,7 +138,9 @@ jobs:
           path: frontend/dist
 
   deploy-frontend:
-    needs: build
+    # Backend first (SPEC.md §12.2): pages rely on what the relay does, such
+    # as the pings on a quiet stream, from the moment they go live.
+    needs: [build, deploy-backend]
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-frontend
