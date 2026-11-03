@@ -10,6 +10,7 @@
 import { debugLog, describeError } from "../debug/debugLog";
 
 const PLAYER_KEY_PREFIX = "math-quiz-player:";
+const RESULT_KEY_PREFIX = "math-quiz-result:";
 const HOST_KEY = "math-quiz-host";
 // The nickname last joined with, prefilled into the next join form.
 const NICKNAME_KEY = "math-quiz-nickname";
@@ -51,6 +52,14 @@ export interface StoredHostSession {
   seq?: number;
 }
 
+/** What the final screen shows, for a reload of it. The player's entry is gone
+ * by then, and nobody could say any more once the teacher closes the quiz. */
+export interface StoredResult {
+  nickname: string;
+  score: number;
+  rank: number | null;
+}
+
 function read<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -82,6 +91,25 @@ export function savePlayerSession(session: StoredPlayerSession): void {
 
 export function clearPlayerSession(pin: string): void {
   localStorage.removeItem(PLAYER_KEY_PREFIX + pin);
+}
+
+// In sessionStorage, as it only serves a reload of this very tab: it goes away
+// with the tab, so it needs no expiry and cannot meet a later quiz on this pin.
+export function loadResult(pin: string): StoredResult | null {
+  try {
+    const raw = sessionStorage.getItem(RESULT_KEY_PREFIX + pin);
+    return raw === null ? null : (JSON.parse(raw) as StoredResult);
+  } catch {
+    return null;
+  }
+}
+
+export function saveResult(pin: string, result: StoredResult): void {
+  try {
+    sessionStorage.setItem(RESULT_KEY_PREFIX + pin, JSON.stringify(result));
+  } catch (e) {
+    console.warn("Could not keep the final result", e);
+  }
 }
 
 export function loadHostSession(): StoredHostSession | null {

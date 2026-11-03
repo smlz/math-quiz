@@ -16,7 +16,9 @@ import {
 import {
   clearPlayerSession,
   forgetNickname,
+  loadResult,
   savePlayerSession,
+  saveResult,
   type StoredPlayerSession,
 } from "../api/storedSession";
 import { addDebugSecret, debugLog, setDebugContext, startDebugLog } from "../debug/debugLog";
@@ -70,6 +72,18 @@ const myRank = ref<number | null>(null);
 // Prefill and explanation for the join form after the host removed us.
 const joinPin = ref<string | undefined>();
 const joinNotice = ref<string | undefined>();
+
+// This tab has seen the end of the quiz in its address: a reload comes back to
+// the final screen, with nothing left to connect to.
+const addressPin = new URLSearchParams(location.search).get("pin");
+const result = addressPin ? loadResult(addressPin) : null;
+if (result) {
+  debugLog("final result restored", { pin: addressPin });
+  nickname.value = result.nickname;
+  myScore.value = result.score;
+  myRank.value = result.rank;
+  status.value = "finished";
+}
 
 let unsubscribe: (() => void) | null = null;
 let retryTimer: number | null = null;
@@ -188,6 +202,9 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       if (snapshot.phase === "finished") {
         // The quiz is over, so the reconnect credential has no further use.
         if (pin.value) clearPlayerSession(pin.value);
+        if (pin.value && nickname.value) {
+          saveResult(pin.value, { nickname: nickname.value, score: myScore.value, rank: myRank.value });
+        }
         debugLog("quiz over", { score: myScore.value, rank: myRank.value });
         teardown();
       }

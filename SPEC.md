@@ -439,7 +439,10 @@ What each side keeps locally:
   when the session was created.
 - Both entries are removed when the quiz is over: the player's when it sees
   the final snapshot, the host's when it closes the final screen (so a host
-  reload there still restores it). There is deliberately no
+  reload there still restores it). The player's tab keeps its final result
+  in sessionStorage, so a reload of the final screen shows it again; it goes
+  away with the tab, and cannot meet a later quiz on the same pin. There is
+  deliberately no
   TTL: a quiz that is never formally finished keeps its entry so it can
   still be resumed later.
 - Both streams **end on their own after 270 s** and carry an SSE `retry: 500`

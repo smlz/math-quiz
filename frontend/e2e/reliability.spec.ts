@@ -350,3 +350,34 @@ test("a pupil coming back is not told that the quiz has yet to start", async ({ 
   await expect(ada.locator(".player-app__reconnecting--host")).toContainText("nicht neu laden", { timeout: 30_000 });
   await expect(ada.getByRole("heading", { name: "Verbinde wieder…" })).toBeVisible();
 });
+
+test("a reload of the final screen keeps the rank", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+  await host.getByRole("button", { name: "Nächste Frage" }).click();
+  await answerOption(ada, 1);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
+
+  const rank = ada.getByText("Du hast auf Platz 1 mit 26 Punkten abgeschlossen");
+  await expect(rank).toBeVisible();
+  await ada.reload();
+  await expect(rank).toBeVisible();
+  await expect(ada.locator(".player-app__nickname")).toHaveText("Ada");
+
+  // Also once the teacher has closed the quiz: nothing depends on the relay.
+  await host.getByRole("button", { name: "Quiz beenden" }).click();
+  await expect(host.getByRole("button", { name: "Quiz erstellen" })).toBeVisible();
+  await ada.reload();
+  await expect(rank).toBeVisible();
+
+  // Only that tab: another one starts over.
+  const other = await ada.context().newPage();
+  await other.goto(`/?pin=${pin}`);
+  await expect(other.getByRole("heading", { name: "Einem Quiz beitreten" })).toBeVisible();
+});
