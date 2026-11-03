@@ -81,7 +81,14 @@ export function startDebugLog(pageRole: DebugRole): void {
   log.entries = [...log.entries.filter((entry) => (entry.last ?? entry.t) >= cutoff), ...early];
 
   const navigation = performance.getEntriesByType?.("navigation")[0] as PerformanceNavigationTiming | undefined;
-  debugLog("page load", { type: navigation?.type ?? "?", path: location.pathname, version: APP_VERSION });
+  // The query too: whether a pupil's page had the pin in its address decides
+  // what a reload does. It holds nothing secret -- tokens never go there.
+  debugLog("page load", {
+    type: navigation?.type ?? "?",
+    path: location.pathname,
+    query: location.search,
+    version: APP_VERSION,
+  });
 
   document.addEventListener("visibilitychange", () => {
     debugLog("visibility", { state: document.visibilityState });
@@ -258,7 +265,7 @@ export function formatDebugLog(forRole: DebugRole): string {
     `Math quiz diagnostics -- ${ROLE_LABELS[forRole]}`,
     `exported: ${formatDate(now)} ${formatTime(now.getTime())} (${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC${formatOffset(now)})`,
     `version: ${APP_VERSION}`,
-    `page: ${location.origin}${location.pathname}`,
+    `page: ${location.origin}${location.pathname}${location.search}`,
     `browser: ${navigator.userAgent}`,
     `screen: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x, language ${navigator.language}, ${navigator.onLine ? "online" : "offline"}`,
   ];

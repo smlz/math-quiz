@@ -349,8 +349,17 @@ function cancelPendingBroadcast() {
  * relay-attributed `player_id` can be relied on. */
 function handleMessage({ player_id, payload }: IncomingMessage) {
   // Whatever is ignored is logged with the reason: that is what answers "my
-  // answer didn't count".
-  const ignore = (reason: string) => debugLog(`${String(payload?.type)} ignored`, { player: player_id, reason });
+  // answer didn't count". For an answer, also what it was, so a late one can
+  // be told right from wrong -- numbers only, the payload is untrusted.
+  const loggable = (value: unknown) => (typeof value === "number" ? value : typeof value);
+  const ignore = (reason: string) =>
+    debugLog(`${String(payload?.type)} ignored`, {
+      player: player_id,
+      reason,
+      ...(payload?.type === "answer"
+        ? { q: loggable(payload.question_index), option: loggable(payload.option_index) }
+        : {}),
+    });
   if (removed.has(player_id)) return ignore("removed");
   if (payload.type === "join") {
     // The first join wins: retries, and renames from an id already seen, are

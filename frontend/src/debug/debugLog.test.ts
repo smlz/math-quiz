@@ -29,7 +29,7 @@ function stubBrowser() {
   const target = { addEventListener: (type: string, listener: (event: unknown) => void) => (listeners[type] = listener) };
   vi.stubGlobal("window", { ...target, innerWidth: 390, innerHeight: 844, devicePixelRatio: 3 });
   vi.stubGlobal("document", { ...target, visibilityState: "visible" });
-  vi.stubGlobal("location", { origin: "https://quiz.example", pathname: "/" });
+  vi.stubGlobal("location", { origin: "https://quiz.example", pathname: "/", search: "" });
   vi.stubGlobal("navigator", { userAgent: "test", language: "de-CH", onLine: true });
   return storage;
 }
