@@ -62,6 +62,16 @@ async function publishAsHost(request: APIRequestContext, host: Page, pin: string
   expect(response.ok()).toBe(true);
 }
 
+/** Cuts the host's broadcasts off and waits until one has failed, which stays
+ * true until they are let through again. The warning on the reveal button
+ * proves less: a slow broadcast on a busy machine shows it for a moment too,
+ * and by the next click it may be gone. */
+async function loseBroadcasts(host: Page) {
+  const failed = host.waitForEvent("requestfailed", (request) => request.url().endsWith("/state"));
+  await host.route("**/session/*/state", (route) => route.abort());
+  await failed;
+}
+
 test("a pin typed by hand survives a reload and a second tab", async ({ browser }) => {
   const { host, pin } = await createQuiz(browser);
 
@@ -131,8 +141,8 @@ test("the reveal asks first while answers cannot arrive", async ({ browser }) =>
   await expect(revealButton).toBeVisible();
 
   // The teacher's laptop loses its connection: every broadcast fails.
-  await host.route("**/session/*/state", (route) => route.abort());
-  await expect(revealButton).toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+  await loseBroadcasts(host);
+  await expect(revealButton).toContainText("Verbindung unterbrochen");
 
   let warning = "";
   host.once("dialog", async (dialog) => {
@@ -251,6 +261,10 @@ test("a reveal right after a teacher reload asks first", async ({ browser }) => 
 
   // Its inbox held back, so that this does not race the stream opening.
   const again = await context.newPage();
+  // A closed page lets go of its host lock a moment later, and on a busy
+  // machine that can outlast the wait of the page that follows it.
+  await again.goto("/");
+  await expect.poll(() => again.evaluate(async () => (await navigator.locks.query()).held?.length)).toBe(0);
   const held: Route[] = [];
   let holding = true;
   await again.route("**/session/*/message_stream", (route) => {
@@ -275,6 +289,7 @@ test("a reveal right after a teacher reload asks first", async ({ browser }) => 
   const answered = again.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ });
   await expect(answered).toBeVisible();
   await expect(answered).not.toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+  again.on("dialog", (dialog) => dialog.accept());
   await answered.click();
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 });
@@ -285,10 +300,8 @@ test("the quiz can be canceled while broadcasts fail", async ({ browser }) => {
   await host.getByRole("button", { name: "Frage starten" }).click();
   await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
 
-  await host.route("**/session/*/state", (route) => route.abort());
-  await expect(host.getByRole("button", { name: /Antwort zeigen/ })).toContainText("Verbindung unterbrochen", {
-    timeout: 15_000,
-  });
+  await loseBroadcasts(host);
+  await expect(host.getByRole("button", { name: /Antwort zeigen/ })).toContainText("Verbindung unterbrochen");
 
   let warning = "";
   host.once("dialog", async (dialog) => {
