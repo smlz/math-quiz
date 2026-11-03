@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { joinSession } from "../api/quizClient";
+import { debugLog } from "../debug/debugLog";
 import {
   loadNickname,
   loadPlayerSession,
@@ -41,11 +42,23 @@ async function join() {
     return;
   }
 
+  // This device may already be a player in this quiz: after a reload of a
+  // page whose address had no pin, or in a new tab. Joining again would add a
+  // second player and leave the first one's points behind, so the stored
+  // player comes back instead -- under the name the host already knows.
+  const stored = loadPlayerSession(trimmedPin);
+  if (stored) {
+    debugLog("join form resumes the stored player", { pin: trimmedPin, player: stored.playerId });
+    emit("joined", stored);
+    return;
+  }
+
   joining.value = true;
   try {
     // Minting an identity is anonymous; the nickname reaches the host as an
     // ordinary message, retried by PlayerApp until the roster confirms it.
     const { playerId, playerToken } = await joinSession(trimmedPin);
+    debugLog("join form creates a new player", { pin: trimmedPin, player: playerId });
     saveNickname(trimmedNickname);
     const session: StoredPlayerSession = {
       pin: trimmedPin,
@@ -67,6 +80,7 @@ async function join() {
 // A stored token means this device already belongs to a player in this quiz.
 // Tokens are signed rather than stored server-side, so resuming needs no
 // request at all -- and re-joining would only create a duplicate player.
+// The same holds for a pin typed into the form, see `join`.
 //
 // Anything else always waits for a tap, even with the pin and a nickname from
 // an earlier quiz already filled in: joining on load would let any
@@ -75,6 +89,7 @@ async function join() {
 onMounted(() => {
   const stored = pin.value ? loadPlayerSession(pin.value) : null;
   if (stored) {
+    debugLog("link resumes the stored player", { pin: stored.pin, player: stored.playerId });
     reconnecting.value = true;
     emit("joined", stored);
   }

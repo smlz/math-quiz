@@ -248,6 +248,12 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    session and listed in the snapshot's `removed` field; that player's device
    then forgets its identity and remembered nickname and shows the join form
    again, so the pupil can rejoin under another name with a fresh id.
+   A device joins a session **once**: a pin typed into the join form for
+   which the device already holds a player — after a reload of a page whose
+   address lacked the pin, or in a new tab — resumes that player rather than
+   creating a second one, and once joined, the page puts the pin into its
+   address so that a reload resumes without the form (§4.3). Pupils on
+   laptops type the pin, so only the QR code's link would carry it otherwise.
 2. **Question active**: host clicks "Start question" and broadcasts a
    snapshot with the new question index. The host screen renders the full
    prompt/options (§8); the **player screen intentionally renders none of
@@ -371,7 +377,10 @@ What each side keeps locally:
   Because tokens are signed rather than stored server-side, resuming needs
   **no request at all**. The player's own choice is kept here because a
   snapshot only says *that* someone answered, never what. The score is not:
-  it arrives with every snapshot from the reveal on (§6.2).
+  it arrives with every snapshot from the reveal on (§6.2). The entry is
+  found by the pin in the page's address, or by the pin typed into the join
+  form; after joining, the page writes the pin into its address, so a
+  reload — or the browser restoring a discarded tab — resumes directly.
 - **Host**: quiz source, `pin`/`host_token`, phase, roster, scores, the
   current question's answers and the frozen correct-order list, under
   `math-quiz-host`. Resuming is just reconnecting and broadcasting again —

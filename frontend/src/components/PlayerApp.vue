@@ -231,6 +231,17 @@ function tick() {
   }
 }
 
+/** Puts the pin into the address, so that a reload -- or the browser bringing
+ * back a tab it had discarded -- returns to this player rather than to an
+ * empty join form. A pin typed into the form is not in the address
+ * otherwise; only the lobby's QR code puts it there. */
+function rememberPinInAddress(sessionPin: string) {
+  const url = new URL(location.href);
+  if (url.searchParams.get("pin") === sessionPin) return;
+  url.searchParams.set("pin", sessionPin);
+  history.replaceState(history.state, "", url);
+}
+
 function teardown() {
   unsubscribe?.();
   unsubscribe = null;
@@ -275,6 +286,7 @@ function onJoined(session: StoredPlayerSession) {
     selected: session.selectedIndex,
   });
   joinNotice.value = undefined;
+  rememberPinInAddress(session.pin);
   pin.value = session.pin;
   playerId.value = session.playerId;
   playerToken.value = session.playerToken;
