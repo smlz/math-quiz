@@ -304,14 +304,16 @@ stream.
 Each session has exactly two SSE streams, and the relay never parses what
 travels on either:
 
-- **`/api/v1/session/{pin}/state_stream`** — host to all players. Carries one
-  event type, `state`, whose payload is a complete snapshot (§6.2).
+- **`/api/v1/session/{pin}/state_stream`** — host to all players. Carries
+  `state` events, whose payload is a complete snapshot (§6.2), and while
+  nothing else flows a `ping` every 5 s (§4.3).
   **Public**: knowing the `pin` is what grants access, because the browser's
   native `EventSource` cannot send an auth header and a token in the query
   string would leak into access logs. Acceptable because every event on it is
   broadcast to all participants anyway.
 - **`/api/v1/session/{pin}/message_stream`** — players to the host. Carries
-  one event type, `message`, whose payload is `{player_id, payload}`. **Host
+  `message` events, whose payload is `{player_id, payload}`, and the same
+  `ping`s. **Host
   only**, so one player can never read another's messages; the host reads it
   with `fetch` + `ReadableStream`, which *can* send a header.
 
@@ -859,7 +861,9 @@ no state at all (§6.1).
   send one (§4.2).
 - The backend never parses message payloads; they are opaque JSON.
 - Failures are visible: both roles show a "reconnecting" banner rather than
-  healing silently, so it is known whether this happens in practice.
+  healing silently, so it is known whether this happens in practice. Both
+  streams carry a `ping` while quiet, so a client can tell a silent sender
+  from a dead connection.
 - Out of scope: disconnect/presence detection, rate limiting beyond session
   creation, non-idempotent
   one-shot effects, replay as a latency optimisation (§10).

@@ -516,6 +516,21 @@ async def test_a_full_queue_drops_the_oldest_frame_not_the_subscriber():
         await _stop_subscriber(stream, task)
 
 
+async def test_a_quiet_stream_sends_ping_events(monkeypatch):
+    # An event rather than an SSE comment: EventSource shows the page events
+    # only, and a player needs to see that its connection is alive while the
+    # host is silent.
+    monkeypatch.setattr(relay, "KEEP_ALIVE_SECONDS", 0.01)
+    stream, task = await _start_subscriber("t")
+    try:
+        assert _parse_sse(await asyncio.wait_for(task, 1)) == ("ping", "{}")
+        relay.fanout.publish("t", "state", {"n": 1})
+        frames = [await asyncio.wait_for(stream.__anext__(), 1) for _ in range(3)]
+        assert (b"event: state\ndata: {\"n\":1}\n\n") in frames
+    finally:
+        await _stop_subscriber(stream, task)
+
+
 async def test_a_stream_ends_on_its_own_and_unsubscribes(monkeypatch):
     # Before the hosting platform's ingress would cut it mid-flight.
     monkeypatch.setattr(relay, "MAX_STREAM_SECONDS", 0.05)

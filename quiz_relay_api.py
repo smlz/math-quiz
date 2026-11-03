@@ -45,7 +45,9 @@ Each session has two streams:
                      + ReadableStream, which *can* send a header.
 
 Both streams end on their own after a few minutes, before the hosting
-platform's ingress would cut them, and clients simply reconnect.
+platform's ingress would cut them, and clients simply reconnect. While a
+topic is quiet, each stream carries a `ping` event every few seconds, so a
+client can tell a silent sender from a dead connection.
 
 Everything is mounted under `/api/v1`, except the `/` health check.
 """
@@ -124,7 +126,12 @@ PLAYER_TOKEN_HEADER = "X-Player-Token"
 # frame is held in up to QUEUE_SIZE slots per topic.
 MAX_BODY_BYTES = 64 * 1024
 
-KEEP_ALIVE_SECONDS = 20
+# A stream that has carried nothing for this long sends a `ping` event. It is
+# an event rather than an SSE comment because EventSource hides comments from
+# the page: a player that keeps receiving pings but no snapshots knows that
+# the host has gone quiet, not its own connection (SPEC.md §4.3). Clients
+# treat three missed pings as a dead connection and reconnect.
+KEEP_ALIVE_SECONDS = 5
 # FastAPI Cloud's ingress cuts every response after 300 s. Ending the stream
 # ourselves a little earlier turns that into a clean close, which clients
 # answer with a prompt reconnect instead of an error.
@@ -213,6 +220,10 @@ def _format_sse(event: str, data: Any) -> bytes:
     return f"event: {event}\ndata: {payload}\n\n".encode()
 
 
+# EventSource drops an event without data, so the ping carries an empty object.
+PING_FRAME = _format_sse("ping", {})
+
+
 class Fanout:
     """Per-topic fan-out to currently connected subscribers.
 
@@ -249,7 +260,7 @@ class Fanout:
                         queue.get(), min(KEEP_ALIVE_SECONDS, remaining)
                     )
                 except asyncio.TimeoutError:
-                    yield b": keep-alive\n\n"
+                    yield PING_FRAME
         finally:
             subscribers = self._queues[topic]
             subscribers.discard(queue)
