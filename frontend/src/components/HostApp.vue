@@ -47,6 +47,13 @@ const BROADCAST_THROTTLE_MS = 500;
 // A failed broadcast is repeated this soon rather than at the next heartbeat,
 // so a single lost request heals before it is worth a banner.
 const BROADCAST_RETRY_MS = 1000;
+// After the inbox comes back, answers sent while it was down still have to
+// arrive: players re-send every 2 s until they see their answer land
+// (PlayerApp's RETRY_MS). Until then a reveal would miss them.
+const SETTLE_AFTER_RECONNECT_MS = 3000;
+// A broadcast that takes this long has not failed yet, but the connection
+// that carries the answers is in trouble too.
+const SLOW_BROADCAST_MS = 2000;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -122,9 +129,46 @@ const broadcastConnection = ref<ConnectionStatus>("open");
 const connection = computed<ConnectionStatus>(() =>
   inboxConnection.value === "open" && broadcastConnection.value === "open" ? "open" : "reconnecting",
 );
+const reportInbox = reportAfterGrace((state) => {
+  inboxConnection.value = state;
+});
 const reportBroadcast = reportAfterGrace((state) => {
   broadcastConnection.value = state;
 });
+// The same two as they are right now, without the banner's grace period:
+// the reveal must not wait five seconds to learn that answers cannot arrive.
+const inboxLive = ref<ConnectionStatus>("open");
+const broadcastLive = ref<ConnectionStatus>("open");
+const reconnectedAt = ref(0);
+// When the broadcast now under way started, if one is.
+const broadcastStartedAt = ref<number | null>(null);
+// Ticks while a session runs, so the "connection" state below follows time.
+const clock = ref(Date.now());
+let clockTimer: number | null = null;
+
+function setInboxLive(state: ConnectionStatus) {
+  if (state === "open" && inboxLive.value !== "open") reconnectedAt.value = Date.now();
+  inboxLive.value = state;
+  reportInbox(state);
+}
+
+function setBroadcastLive(state: ConnectionStatus) {
+  if (state === "open" && broadcastLive.value !== "open") reconnectedAt.value = Date.now();
+  broadcastLive.value = state;
+  reportBroadcast(state);
+}
+
+/** Whether answers on their way may not reach this page right now: a stream
+ * or a broadcast is failing or stuck, or they only just recovered. */
+function connectionTroubleAt(now: number): boolean {
+  return (
+    inboxLive.value !== "open" ||
+    broadcastLive.value !== "open" ||
+    now - reconnectedAt.value < SETTLE_AFTER_RECONNECT_MS ||
+    (broadcastStartedAt.value !== null && now - broadcastStartedAt.value > SLOW_BROADCAST_MS)
+  );
+}
+const connectionTrouble = computed(() => connectionTroubleAt(clock.value));
 
 const roster = reactive(new Map<string, string>()); // player_id -> nickname
 const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
@@ -175,10 +219,15 @@ const countsArray = computed<number[]>(() =>
 
 const answeredCount = computed(() => answers.size);
 
+const allAnswered = computed(() => roster.size > 0 && answeredCount.value >= roster.size);
+// Answers still on their way could be lost by revealing now.
+const revealAtRisk = computed(() => connectionTrouble.value && !allAnswered.value);
+
 const answerButtonLabel = computed(() =>
-  roster.size > 0 && answeredCount.value >= roster.size
+  allAnswered.value
     ? "Alle haben geantwortet — Antwort zeigen"
-    : `Antwort zeigen · ${answeredCount.value} von ${roster.size} beantwortet`,
+    : `Antwort zeigen · ${answeredCount.value} von ${roster.size} beantwortet` +
+      (revealAtRisk.value ? " · Verbindung unterbrochen" : ""),
 );
 
 const isLastQuestion = computed(
@@ -343,21 +392,23 @@ async function broadcast() {
   }
   const controller = new AbortController();
   broadcasting = controller;
+  broadcastStartedAt.value = Date.now();
   const snapshot = buildSnapshot();
   try {
     await publishState(pin.value, hostToken.value, snapshot, controller.signal);
     // Repeats collapse into one line, so an unchanged heartbeat costs nothing.
     debugLog("broadcast", { phase: snapshot.phase, q: snapshot.question_index, players: snapshot.players.length });
-    reportBroadcast("open");
+    setBroadcastLive("open");
   } catch (e) {
     // Cancelled because the session is over: nothing to retry.
     if (controller.signal.aborted) return;
     console.warn("Snapshot broadcast failed", e);
-    reportBroadcast("reconnecting");
+    setBroadcastLive("reconnecting");
     scheduleBroadcast(BROADCAST_RETRY_MS);
   } finally {
     if (broadcasting === controller) {
       broadcasting = null;
+      broadcastStartedAt.value = null;
     }
   }
   if (broadcastAgain) {
@@ -371,6 +422,7 @@ async function broadcast() {
 function cancelBroadcast() {
   broadcasting?.abort();
   broadcasting = null;
+  broadcastStartedAt.value = null;
   broadcastAgain = false;
 }
 
@@ -469,10 +521,9 @@ watch(
 );
 
 function connect(sessionPin: string, token: string) {
-  unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, (state) => {
-    inboxConnection.value = state;
-  });
+  unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, setInboxLive);
   heartbeat = window.setInterval(() => void broadcast(), HEARTBEAT_MS);
+  clockTimer = window.setInterval(() => (clock.value = Date.now()), 500);
 }
 
 function disconnect() {
@@ -480,11 +531,18 @@ function disconnect() {
   unsubscribe = null;
   cancelPendingBroadcast();
   cancelBroadcast();
+  reportInbox.cancel();
   reportBroadcast.cancel();
   inboxConnection.value = broadcastConnection.value = "open";
+  inboxLive.value = broadcastLive.value = "open";
+  reconnectedAt.value = 0;
   if (heartbeat !== null) {
     clearInterval(heartbeat);
     heartbeat = null;
+  }
+  if (clockTimer !== null) {
+    clearInterval(clockTimer);
+    clockTimer = null;
   }
 }
 
@@ -631,6 +689,19 @@ async function startQuestion(index: number) {
 
 async function reveal() {
   if (!quiz.value || status.value !== "question") return;
+  // While answers cannot reach this page, revealing would score the ones
+  // still on their way as no answer at all. It stays the teacher's call.
+  if (!allAnswered.value && connectionTroubleAt(Date.now())) {
+    const go = window.confirm(
+      "Die Verbindung ist gerade unterbrochen. Antworten, die noch unterwegs sind, würden nicht mehr gezählt. Trotzdem die Antwort zeigen?",
+    );
+    debugLog("reveal during connection trouble", {
+      confirmed: go,
+      inbox: inboxLive.value,
+      broadcast: broadcastLive.value,
+    });
+    if (!go) return;
+  }
   const q = quiz.value.questions[currentQuestionIndex.value];
 
   // Map iteration is insertion order, so this is submission order.
@@ -846,7 +917,9 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'question' && currentQuestion">
       <QuestionCard :question="currentQuestion" :reveal-correct="false" />
-      <button type="button" @click="reveal">{{ answerButtonLabel }}</button>
+      <button type="button" :class="{ 'host-app__reveal--at-risk': revealAtRisk }" @click="reveal">
+        {{ answerButtonLabel }}
+      </button>
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
         <SoundToggle />
@@ -915,6 +988,10 @@ onUnmounted(() => {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+}
+.host-app__reveal--at-risk {
+  background: #b8860b;
+  color: #fff;
 }
 .host-app__reconnecting {
   margin: 0 0 0.5rem;

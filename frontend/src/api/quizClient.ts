@@ -427,6 +427,10 @@ const STREAM_MIN_LIFETIME_MS = 10_000;
  * the automatic reconnect, hence the loop below. A connection that carries
  * nothing for SILENT_AFTER_MS -- the relay pings a quiet stream every few
  * seconds -- has died without saying so, and is replaced.
+ *
+ * `onStatus` hears every change at once, without a grace period: the host
+ * holds back the reveal while answers cannot arrive, and applies its own
+ * grace period to the banner.
  */
 export function subscribeToMessages(
   pin: string,
@@ -435,7 +439,6 @@ export function subscribeToMessages(
   onStatus: (status: ConnectionStatus) => void = () => {},
 ): () => void {
   const controller = new AbortController();
-  const report = reportAfterGrace(onStatus);
 
   void (async () => {
     while (!controller.signal.aborted) {
@@ -462,7 +465,7 @@ export function subscribeToMessages(
           throw new Error(`message_stream failed (${response.status})`);
         }
         debugLog("message stream open");
-        report("open");
+        onStatus("open");
         feed();
         const openedAt = Date.now();
         for await (const frame of readEventStream(response.body, feed)) {
@@ -477,10 +480,10 @@ export function subscribeToMessages(
         }
       } catch (e) {
         if (controller.signal.aborted) return;
-        report("reconnecting");
         debugLog("message stream failed", {
           error: silent ? `nothing received for ${SILENT_AFTER_MS / 1000}s` : describeError(e),
         });
+        onStatus("reconnecting");
         await sleep(1000);
       } finally {
         clearTimeout(watchdog);
@@ -489,10 +492,7 @@ export function subscribeToMessages(
     }
   })();
 
-  return () => {
-    report.cancel();
-    controller.abort();
-  };
+  return () => controller.abort();
 }
 
 interface StreamFrame {

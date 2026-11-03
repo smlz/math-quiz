@@ -267,7 +267,12 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    display, reading e.g. "Show answer · 2 of 3 answered" while players are
    still answering, and switching to "All answered — show answer" once every
    joined player has answered, so the host can reveal at any time either
-   way; per-option answer counts are **not broken down** on the host screen
+   way. While answers on their way may not reach the host — its inbox is
+   down, a broadcast fails or takes over 2 s, or either recovered less than
+   3 s ago, the time players need to re-send — and not everyone has
+   answered, the button adds "connection interrupted" and asks before
+   revealing: answers still on their way would score as no answer at all.
+   Per-option answer counts are **not broken down** on the host screen
    during this phase (§8) — only the aggregate answered count — and the
    per-option breakdown appears once the host reveals (step 3).
 3. **Question reveal**: triggered by the host clicking "Show answer". The
