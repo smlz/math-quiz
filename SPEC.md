@@ -243,17 +243,27 @@ LOBBY -> QUESTION -> REVEAL -> LEADERBOARD -> (next question or) FINISHED
    localStorage and reused for later sessions: the join form comes prefilled,
    but joining always takes a tap, so a `/?pin=...` link alone can never
    hand a nickname to a session. The number of joined players is shown.
-   The host can remove a player from the lobby or the in-game leaderboard,
-   mainly for a rude nickname. The removed id is ignored for the rest of the
-   session and listed in the snapshot's `removed` field; that player's device
-   then forgets its identity and remembered nickname and shows the join form
-   again, so the pupil can rejoin under another name with a fresh id.
    A device joins a session **once**: a pin typed into the join form for
    which the device already holds a player — after a reload of a page whose
    address lacked the pin, or in a new tab — resumes that player rather than
    creating a second one, and once joined, the page puts the pin into its
    address so that a reload resumes without the form (§4.3). Pupils on
    laptops type the pin, so only the QR code's link would carry it otherwise.
+   The host can remove a player, mainly for a rude nickname: in the lobby
+   from its list, during the game from the **players list** behind the
+   footer's "Spieler:innen" button (the projected leaderboard has no
+   buttons). The removed id is ignored for the rest of the session and
+   listed in the snapshot's `removed` field; that player's device then
+   forgets its identity and remembered nickname and shows the join form
+   again, so the pupil can rejoin under another name with a fresh id. The
+   players list also folds a **duplicate entry** — the same pupil on a second
+   device, or in a QR scanner's own browser, which nothing can link — into
+   the entry the pupil plays on now: its points move over (an answer to the
+   open question too, if the other entry has none, and a question both
+   answered correctly counts once), and the old entry is removed as above.
+   To tell which entry was abandoned, the list shows for each player the
+   question they were last heard from at, and dims those with nothing for
+   the latest question played.
 2. **Question active**: host clicks "Start question" and broadcasts a
    snapshot with the new question index. The host screen renders the full
    prompt/options (§8); the **player screen intentionally renders none of
@@ -411,8 +421,10 @@ What each side keeps locally:
   form; after joining, the page writes the pin into its address, so a
   reload — or the browser restoring a discarded tab — resumes directly.
 - **Host**: quiz source, `pin`/`host_token`, phase, roster, scores, the
-  current question's answers and the frozen correct-order list, under
-  `math-quiz-host`. Resuming is just reconnecting and broadcasting again —
+  current question's answers and the frozen correct-order list, removed
+  players, when each player was last heard from, and the latest snapshot
+  number, under `math-quiz-host`. Resuming is just reconnecting and
+  broadcasting again —
   there is nothing on the server to re-fetch. The quiz source is only
   re-parsed, not re-validated with Typst, since it already compiled cleanly
   when the session was created.
@@ -506,6 +518,9 @@ class HostState:
     scores: dict[str, int]        # player_id -> cumulative score
     answers: dict[str, int]       # player_id -> option_index, in arrival order
     correct_order: list[str]      # frozen at reveal, so re-broadcasting cannot re-score
+    removed: set[str]             # ignored for the rest of the session
+    last_seen: dict[str, int]     # player_id -> question index of the latest
+                                  # answer or join (-1: lobby), for the players list
 ```
 
 **The snapshot** is what the host publishes, and it is deliberately tiny —
@@ -608,7 +623,9 @@ purges the whole map.
   screen (correct answer hig, tied scores share the same rank), "Next"
  + counts shown, plus a **"Show
   leaderboard"** button to advance), leaderboard (**top 5 players only**,
-  ranked by cumulative score), "Next" control.
+  ranked by cumulative score), "Next" control. From the first question to
+  the last leaderboard, the footer also has a "Spieler:innen" button that
+  opens the players list for removing and merging entries (§4.1).
 - **Host sound** (`frontend/src/sound/hostSound.ts`, clips and their
   credits in `frontend/public/audio/`, CC0 except one CC BY tune, which the
   footer's "Musik-Nachweise" link attributes): **off by default**; a
@@ -747,7 +764,9 @@ purges the whole map.
   involvement. That would need a durable log; the host's snapshots make it
   unnecessary (§4.3).
 - Presence/disconnect detection: the host cannot tell a player who left from
-  one who is merely slow, and does not try to.
+  one who is merely slow, and does not try to. The players list only dims
+  those with nothing for the latest question played, as a hint for the
+  teacher (§4.1).
 - Non-idempotent one-shot effects (a countdown sound, a one-time
   animation). Everything broadcast is state, which is what makes repeating
   it harmless.

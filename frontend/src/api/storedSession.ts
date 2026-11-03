@@ -43,6 +43,9 @@ export interface StoredHostSession {
   /** Removed player ids, still ignored after a reload. Absent in entries
    * written before players could be removed. */
   removed?: string[];
+  /** player_id -> question index the player was last heard from at. Absent
+   * in entries written before it was tracked. */
+  lastSeen?: [string, number][];
   /** The number of the latest snapshot sent, which the next one must exceed.
    * Absent in entries written before snapshots were numbered. */
   seq?: number;

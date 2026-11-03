@@ -22,6 +22,7 @@ import { QuizParseError } from "../quiz/errors";
 import { OPTION_LABELS } from "../quiz/optionStyle";
 import { cleanNickname } from "../quiz/nickname";
 import { parseQuiz } from "../quiz/parseQuiz";
+import { latestPlayedQuestion, mergePlayers, missedLatestQuestion, type PlayerRow } from "../quiz/roster";
 import { fetchQuizSource, resolveSource, type SourceLocation } from "../quiz/remoteSource";
 import { MINIMAL_QUIZ } from "../quiz/sampleQuiz";
 import { loadQuizImages, renderTypst } from "../quiz/typst";
@@ -31,6 +32,7 @@ import AppFooter from "./AppFooter.vue";
 import DebugExport from "./DebugExport.vue";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
+import HostPlayers from "./HostPlayers.vue";
 import QuestionCard from "./QuestionCard.vue";
 import ScreenFrame from "./ScreenFrame.vue";
 import SoundToggle from "./SoundToggle.vue";
@@ -179,6 +181,11 @@ const scoresBeforeReveal = ref<Map<string, number> | null>(null);
 // Players the teacher removed (e.g. for a rude nickname). Their ids are
 // ignored for the rest of the session; rejoining takes a fresh id.
 const removed = reactive(new Set<string>());
+// When each player was last heard from, as a question index: their latest
+// answer or join, -1 for the lobby. Shows the teacher who stopped playing.
+const lastSeen = reactive(new Map<string, number>());
+// The teacher's list of all players (HostPlayers.vue).
+const playersOpen = ref(false);
 
 const currentQuestionIndex = ref(-1);
 // Insertion order is arrival order, which is exactly what decides the 13-to-10
@@ -229,6 +236,17 @@ const answerButtonLabel = computed(() =>
     : `Antwort zeigen · ${answeredCount.value} von ${roster.size} beantwortet` +
       (revealAtRisk.value ? " · Verbindung unterbrochen" : ""),
 );
+
+const playerRows = computed<PlayerRow[]>(() => {
+  const latestPlayed = latestPlayedQuestion(status.value, currentQuestionIndex.value);
+  return [...roster].map(([player_id, nickname]) => ({
+    player_id,
+    nickname,
+    score: scores.get(player_id) ?? 0,
+    lastSeen: lastSeen.get(player_id) ?? -1,
+    missedLatest: missedLatestQuestion(lastSeen, player_id, latestPlayed),
+  }));
+});
 
 const isLastQuestion = computed(
   () => !!quiz.value && currentQuestionIndex.value === quiz.value.questions.length - 1,
@@ -462,7 +480,11 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     // ignored -- a real player always re-sends the nickname it joined with.
     // Not logged: during a question a player's join stays unconfirmed, and
     // is repeated every few seconds, until its answer lands (see PlayerApp).
-    if (roster.has(player_id)) return;
+    // A device re-sends its join after a reload, so it is still around.
+    if (roster.has(player_id)) {
+      lastSeen.set(player_id, Math.max(lastSeen.get(player_id) ?? -1, currentQuestionIndex.value));
+      return;
+    }
     // A device that cleared its session at the end and joins again would
     // otherwise be listed a second time, with no points and a last place.
     if (status.value === "finished") return ignore("quiz finished");
@@ -472,6 +494,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     if (!nickname) return ignore("unusable nickname");
     roster.set(player_id, nickname);
     if (!scores.has(player_id)) scores.set(player_id, 0);
+    lastSeen.set(player_id, currentQuestionIndex.value);
     debugLog("join", { player: player_id });
   } else if (payload.type === "answer") {
     if (status.value !== "question" || !currentQuestion.value) return ignore(`phase ${status.value}`);
@@ -487,6 +510,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
       return ignore("invalid option");
     }
     answers.set(player_id, optionIndex);
+    lastSeen.set(player_id, currentQuestionIndex.value);
     debugLog("answer", { player: player_id, q: currentQuestionIndex.value, option: optionIndex, nth: answers.size });
   } else {
     return ignore("unknown type");
@@ -564,6 +588,7 @@ function persistSession() {
     answers: [...answers],
     correctOrder: correctOrder.value,
     removed: [...removed],
+    lastSeen: [...lastSeen],
     seq: lastSeq,
   });
 }
@@ -579,6 +604,7 @@ watch(
     [...scores],
     [...answers],
     [...removed],
+    [...lastSeen],
   ],
   persistSession,
   { deep: true },
@@ -606,6 +632,11 @@ if (restored?.hostToken) {
     for (const [playerId, score] of restored.scores) scores.set(playerId, score);
     for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
     for (const playerId of restored.removed ?? []) removed.add(playerId);
+    // Saved before players were tracked: everyone counts as present.
+    const seen = new Map(restored.lastSeen ?? []);
+    for (const playerId of roster.keys()) {
+      lastSeen.set(playerId, seen.get(playerId) ?? restored.currentQuestionIndex);
+    }
     lastSeq = restored.seq ?? 0;
     status.value = restored.status as Status;
     addDebugSecret(restored.hostToken);
@@ -737,7 +768,39 @@ async function removePlayer(playerId: string) {
   roster.delete(playerId);
   scores.delete(playerId);
   answers.delete(playerId);
-  correctOrder.value = correctOrder.value.filter((id) => id !== playerId);
+  lastSeen.delete(playerId);
+  // The correct order stays as it is: everyone derives the points just won
+  // from their place in it, and those points are already in the scores.
+  await broadcast();
+}
+
+/** Folds a duplicate entry into the one its pupil plays on now: the points
+ * move over, and the old entry is removed like any other. */
+async function mergePlayer(sourceId: string, targetId: string) {
+  const source = roster.get(sourceId);
+  const target = roster.get(targetId);
+  if (source === undefined || target === undefined || sourceId === targetId) return;
+  const points = scores.get(sourceId) ?? 0;
+  if (
+    !window.confirm(
+      `«${source}» mit «${target}» zusammenführen? «${target}» erhält die ${points} Punkte von «${source}», und «${source}» wird entfernt.`,
+    )
+  )
+    return;
+  debugLog("players merged", { from: sourceId, into: targetId, points });
+  correctOrder.value = mergePlayers(
+    {
+      roster,
+      scores,
+      answers,
+      correctOrder: correctOrder.value,
+      lastSeen,
+      removed,
+      scoresBefore: scoresBeforeReveal.value,
+    },
+    sourceId,
+    targetId,
+  );
   await broadcast();
 }
 
@@ -802,6 +865,8 @@ function resetToSetup() {
   scoresBeforeReveal.value = null;
   answers.clear();
   removed.clear();
+  lastSeen.clear();
+  playersOpen.value = false;
 }
 
 /** Host-initiated early abort, available any time a session is running.
@@ -923,6 +988,7 @@ onUnmounted(() => {
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
         <SoundToggle />
+        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
@@ -933,6 +999,7 @@ onUnmounted(() => {
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
         <SoundToggle />
+        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
@@ -951,6 +1018,7 @@ onUnmounted(() => {
       <div class="host-app__footer">
         <span class="host-app__progress">{{ questionProgress }}</span>
         <SoundToggle />
+        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
         <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
       </div>
     </template>
@@ -966,6 +1034,14 @@ onUnmounted(() => {
         <DebugExport role="host" />
       </div>
     </template>
+
+    <HostPlayers
+      v-if="playersOpen && (status === 'question' || status === 'reveal' || status === 'leaderboard')"
+      :players="playerRows"
+      @close="playersOpen = false"
+      @remove="removePlayer"
+      @merge="mergePlayer"
+    />
   </div>
 </template>
 
