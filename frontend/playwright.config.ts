@@ -12,8 +12,11 @@ export default defineConfig({
   // cetz-plot, cetz-venn) fresh over the network, which needs more headroom
   // than the previous 120s budget.
   timeout: 240_000,
-  fullyParallel: false,
-  workers: 1,
+  // Every test makes its own quiz on its own pin, so they share nothing but
+  // the machine. Two at a time left the tests that watch real timers stable
+  // on a 4-core laptop; `--workers` tries more.
+  fullyParallel: true,
+  workers: 2,
   // Once on CI, where a browser engine occasionally crashes outright (WebKit:
   // "internal error"). A test that only passes on its retry is still listed
   // as flaky in the report.
