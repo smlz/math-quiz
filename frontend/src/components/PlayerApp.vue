@@ -161,6 +161,12 @@ function handleSnapshot(snapshot: SessionSnapshot) {
       status.value = "question";
       break;
     case "reveal":
+      // Only the next answer replaces the pick in storage, so after a reload
+      // it may belong to an earlier question: this one was skipped.
+      if (answeredQuestionIndex.value !== snapshot.question_index) {
+        selectedIndex.value = null;
+        answeredQuestionIndex.value = null;
+      }
       revealCorrectIndex.value = snapshot.correct_index ?? null;
       // Recomputed from every repeat of the snapshot rather than added up:
       // a repeat, a reload or a missed reveal cannot skew anything.

@@ -415,7 +415,9 @@ What each side keeps locally:
   answeredQuestionIndex}` in localStorage under `math-quiz-player:{pin}`.
   Because tokens are signed rather than stored server-side, resuming needs
   **no request at all**. The player's own choice is kept here because a
-  snapshot only says *that* someone answered, never what. The score is not:
+  snapshot only says *that* someone answered, never what, along with the
+  question it belongs to: a reveal of any other question ignores it, as that
+  one was skipped. The score is not kept:
   it arrives with every snapshot from the reveal on (§6.2). The entry is
   found by the pin in the page's address, or by the pin typed into the join
   form; after joining, the page writes the pin into its address, so a

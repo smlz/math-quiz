@@ -205,3 +205,26 @@ test("the teacher folds a duplicate entry into the one its pupil plays on", asyn
   // The old entry is gone for good; its device offers to join anew.
   await expect(first.locator(".player-join__notice")).toContainText("anderen Namen");
 });
+
+test("a reload on the reveal of a skipped question shows no old pick", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+  const bo = await joinByLink(browser, pin, "Bo");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await answerOption(bo, 0);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+  await host.getByRole("button", { name: "Nächste Frage" }).click();
+
+  // Ada skips the second question.
+  await answerOption(bo, 1);
+  await host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ }).click();
+  await expect(ada.locator(".player-app__reveal-wrong")).toHaveText("Keine Antwort. +0 Punkte");
+
+  await ada.reload();
+  await expect(ada.locator(".player-app__reveal-wrong")).toHaveText("Keine Antwort. +0 Punkte");
+  await expect(ada.locator(".player-answer-grid__mark")).toHaveCount(0);
+  await expect(ada.locator(".player-app__total-score")).toContainText("13");
+});
