@@ -1,0 +1,207 @@
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+
+// What a classroom does to a quiz: pupils reload, type the pin by hand,
+// end up in the roster twice, and the teacher's laptop loses its Wi-Fi.
+// The default quiz on the setup screen has two questions, C and B correct.
+
+// Every device gets its own context, closed after the test: an open page
+// keeps its streams, and with them connections, busy for the next test.
+const contexts: BrowserContext[] = [];
+
+async function newDevice(browser: Browser): Promise<Page> {
+  const context = await browser.newContext();
+  contexts.push(context);
+  return context.newPage();
+}
+
+test.afterEach(async () => {
+  await Promise.all(contexts.splice(0).map((context) => context.close()));
+});
+
+/** `acceptDialogs`: revealing before everyone has answered asks first when
+ * the connection looks troubled, and a slow test machine can make a single
+ * broadcast look like that. Only the test of that question handles it. */
+async function createQuiz(browser: Browser, acceptDialogs = true): Promise<{ host: Page; pin: string }> {
+  const host = await newDevice(browser);
+  if (acceptDialogs) host.on("dialog", (dialog) => dialog.accept());
+  await host.goto("/create");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = (await host.locator(".host-lobby__pin").textContent())!.trim();
+  return { host, pin };
+}
+
+async function joinByLink(browser: Browser, pin: string, nickname: string): Promise<Page> {
+  const page = await newDevice(browser);
+  await page.goto(`/?pin=${pin}`);
+  await page.getByLabel("Nickname").fill(nickname);
+  await page.getByRole("button", { name: "Beitreten" }).click();
+  await expect(page.getByRole("heading", { name: `Du bist dabei, ${nickname}!` })).toBeVisible();
+  return page;
+}
+
+async function answerOption(page: Page, optionIndex: number) {
+  await expect(page.locator(".player-answer-grid__option")).toHaveCount(4);
+  await page.locator(".player-answer-grid__option").nth(optionIndex).click();
+}
+
+/** Publishes a snapshot as the host would, with the host's own token. */
+async function publishAsHost(request: APIRequestContext, host: Page, pin: string, snapshot: object) {
+  const { hostToken } = await host.evaluate(() => JSON.parse(localStorage.getItem("math-quiz-host")!));
+  const response = await request.post(`/api/v1/session/${pin}/state`, {
+    headers: { "X-Host-Token": hostToken },
+    data: snapshot,
+  });
+  expect(response.ok()).toBe(true);
+}
+
+test("a pin typed by hand survives a reload and a second tab", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+
+  // A laptop cannot scan the QR code: the pupil types the pin.
+  const ada = await newDevice(browser);
+  await ada.goto("/");
+  await ada.getByLabel("Spiel-PIN").fill(pin);
+  await ada.getByLabel("Nickname").fill("Ada");
+  await ada.getByRole("button", { name: "Beitreten" }).click();
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();
+  // The address now carries the pin, so a reload knows where to return.
+  await expect(ada).toHaveURL(new RegExp(`\\?pin=${pin}$`));
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+
+  await ada.reload();
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+
+  // A fresh tab on the bare address, and the pin typed again: still the
+  // same player, with the same answer, not a second "Ada (2)".
+  const again = await ada.context().newPage();
+  await again.goto("/");
+  await again.getByLabel("Spiel-PIN").fill(pin);
+  await again.getByRole("button", { name: "Beitreten" }).click();
+  await expect(again.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+  await expect(again.locator(".player-app__nickname")).toHaveText("Ada");
+
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await expect(again.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+  await expect(host.locator(".leaderboard__row")).toHaveCount(1);
+});
+
+test("an answer that never arrived is not passed off as wrong", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+  const bo = await joinByLink(browser, pin, "Bo");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  // Every answer Ada sends is lost on the way.
+  await ada.route("**/session/*/message", async (route) => {
+    if (route.request().postDataJSON()?.type === "answer") await route.abort();
+    else await route.continue();
+  });
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toHaveText("Antwort wird gesendet …");
+
+  await host.getByRole("button", { name: /Antwort zeigen · 0 von 2 beantwortet/ }).click();
+  // Ada's pick was right; she is told it was the connection, not the answer.
+  await expect(ada.locator(".player-app__reveal-lost")).toContainText("nicht rechtzeitig angekommen");
+  await expect(ada.locator(".player-answer-grid__mark--correct")).toBeVisible();
+  // Bo did not answer at all.
+  await expect(bo.locator(".player-app__reveal-wrong")).toHaveText("Keine Antwort. +0 Punkte");
+});
+
+test("the reveal asks first while answers cannot arrive", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser, false);
+  const ada = await joinByLink(browser, pin, "Ada");
+  await joinByLink(browser, pin, "Bo");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+  const revealButton = host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ });
+  await expect(revealButton).toBeVisible();
+
+  // The teacher's laptop loses its connection: every broadcast fails.
+  await host.route("**/session/*/state", (route) => route.abort());
+  await expect(revealButton).toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+
+  let warning = "";
+  host.once("dialog", async (dialog) => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await revealButton.click();
+  await expect.poll(() => warning).toContain("Verbindung");
+  // Declined: the question stays open.
+  await expect(revealButton).toBeVisible();
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+
+  // Back online, and once answers have had the moment they need to catch
+  // up, the warning is gone and the reveal goes ahead.
+  await host.unroute("**/session/*/state");
+  await expect(revealButton).not.toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+  host.on("dialog", (dialog) => dialog.accept());
+  await revealButton.click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+});
+
+test("a snapshot that arrives out of date is ignored", async ({ browser, request }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  // What a stalled connection lets through late: the lobby, long gone.
+  await publishAsHost(request, host, pin, { phase: "lobby", question_index: null, players: [], seq: 1 });
+  await ada.waitForTimeout(1500);
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toHaveCount(0);
+
+  // The current question still works as before.
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+});
+
+test("pupils are told to wait, not reload, when the teacher drops out", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+
+  // The host page goes away; the relay keeps pinging Ada's stream.
+  await host.close();
+  await expect(ada.locator(".player-app__reconnecting--host")).toContainText("nicht neu laden", {
+    timeout: 30_000,
+  });
+});
+
+test("the teacher folds a duplicate entry into the one its pupil plays on", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  // The same pupil twice, e.g. once in the QR scanner's own browser.
+  const first = await joinByLink(browser, pin, "Ada");
+  const second = await joinByLink(browser, pin, "Ada");
+  await expect(host.locator(".host-lobby__name")).toHaveText(["Ada", "Ada (2)"]);
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(first, 2);
+  await host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ }).click();
+  await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+
+  // The pupil now plays on the second entry: the first one's 13 points move.
+  await host.getByRole("button", { name: "Spieler:innen (2)" }).click();
+  const players = host.getByRole("dialog", { name: "Spieler:innen" });
+  await expect(players.locator(".host-players__row")).toHaveCount(2);
+  await players.getByRole("combobox", { name: "Punkte von Ada übertragen", exact: true }).selectOption({
+    label: "Ada (2)",
+  });
+  await expect(players.locator(".host-players__row")).toHaveCount(1);
+  await players.getByRole("button", { name: "Schließen" }).click();
+
+  const rows = host.locator(".leaderboard__row");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Ada (2)");
+  await expect(rows.first().locator(".leaderboard__score")).toHaveText("13");
+  await expect(second.getByText("Du bist auf Platz 1 mit 13 Punkten")).toBeVisible();
+  // The old entry is gone for good; its device offers to join anew.
+  await expect(first.locator(".player-join__notice")).toContainText("anderen Namen");
+});
