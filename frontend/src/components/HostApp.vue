@@ -545,6 +545,9 @@ watch(
 );
 
 function connect(sessionPin: string, token: string) {
+  // Not connected until the stream says so. Its first opening counts as a
+  // recovery: after a reload, answers sent meanwhile still have to arrive.
+  inboxLive.value = "reconnecting";
   unsubscribe = subscribeToMessages(sessionPin, token, handleMessage, setInboxLive);
   heartbeat = window.setInterval(() => void broadcast(), HEARTBEAT_MS);
   clockTimer = window.setInterval(() => (clock.value = Date.now()), 500);

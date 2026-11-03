@@ -1,4 +1,12 @@
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Route,
+} from "@playwright/test";
 
 // What a classroom does to a quiz: pupils reload, type the pin by hand,
 // end up in the roster twice, and the teacher's laptop loses its Wi-Fi.
@@ -227,4 +235,46 @@ test("a reload on the reveal of a skipped question shows no old pick", async ({ 
   await expect(ada.locator(".player-app__reveal-wrong")).toHaveText("Keine Antwort. +0 Punkte");
   await expect(ada.locator(".player-answer-grid__mark")).toHaveCount(0);
   await expect(ada.locator(".player-app__total-score")).toContainText("13");
+});
+
+test("a reveal right after a teacher reload asks first", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser, false);
+  const ada = await joinByLink(browser, pin, "Ada");
+  await joinByLink(browser, pin, "Bo");
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  // The teacher's page goes away, and Ada answers in the gap.
+  const context = host.context();
+  await host.close();
+  await answerOption(ada, 2);
+
+  // Its inbox held back, so that this does not race the stream opening.
+  const again = await context.newPage();
+  const held: Route[] = [];
+  let holding = true;
+  await again.route("**/session/*/message_stream", (route) => {
+    if (holding) held.push(route);
+    else return route.fallback();
+  });
+  await again.goto("/create");
+  const revealButton = again.getByRole("button", { name: /Antwort zeigen · 0 von 2 beantwortet/ });
+  await expect(revealButton).toContainText("Verbindung unterbrochen");
+
+  let warning = "";
+  again.once("dialog", async (dialog) => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await revealButton.click();
+  await expect.poll(() => warning).toContain("Verbindung");
+
+  // Once connected, Ada's next re-send arrives and the warning clears.
+  holding = false;
+  await Promise.all(held.map((route) => route.abort().catch(() => {})));
+  const answered = again.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ });
+  await expect(answered).toBeVisible();
+  await expect(answered).not.toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+  await answered.click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
 });
