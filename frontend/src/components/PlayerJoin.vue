@@ -27,7 +27,8 @@ const error = ref("");
 const joining = ref(false);
 const reconnecting = ref(false);
 
-const emit = defineEmits<{ joined: [session: StoredPlayerSession] }>();
+/** `resumed`: an earlier player came back, so the quiz may be anywhere by now. */
+const emit = defineEmits<{ joined: [session: StoredPlayerSession, resumed: boolean] }>();
 
 async function join() {
   error.value = "";
@@ -49,7 +50,7 @@ async function join() {
   const stored = loadPlayerSession(trimmedPin);
   if (stored) {
     debugLog("join form resumes the stored player", { pin: trimmedPin, player: stored.playerId });
-    emit("joined", stored);
+    emit("joined", stored, true);
     return;
   }
 
@@ -69,7 +70,7 @@ async function join() {
       answeredQuestionIndex: null,
     };
     savePlayerSession(session);
-    emit("joined", session);
+    emit("joined", session, false);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -91,7 +92,7 @@ onMounted(() => {
   if (stored) {
     debugLog("link resumes the stored player", { pin: stored.pin, player: stored.playerId });
     reconnecting.value = true;
-    emit("joined", stored);
+    emit("joined", stored, true);
   }
 });
 </script>

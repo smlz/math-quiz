@@ -335,3 +335,18 @@ test("a refused host token stops the retries and says so", async ({ browser }) =
   await expect(host.getByRole("button", { name: "Quiz erstellen" })).toBeVisible();
   expect(await host.evaluate(() => localStorage.getItem("math-quiz-host"))).toBeNull();
 });
+
+test("a pupil coming back is not told that the quiz has yet to start", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser);
+  const ada = await joinByLink(browser, pin, "Ada");
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+
+  // No teacher, so no heartbeat ends the wait while this looks at it.
+  await host.close();
+  await ada.reload();
+  await expect(ada.getByRole("heading", { name: "Verbinde wieder…" })).toBeVisible();
+  await expect(ada.getByText("Warte, bis das Quiz startet")).toHaveCount(0);
+  await expect(ada.locator(".player-app__reconnecting--host")).toContainText("nicht neu laden", { timeout: 30_000 });
+  await expect(ada.getByRole("heading", { name: "Verbinde wieder…" })).toBeVisible();
+});

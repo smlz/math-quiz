@@ -426,7 +426,9 @@ What each side keeps locally:
   it arrives with every snapshot from the reveal on (§6.2). The entry is
   found by the pin in the page's address, or by the pin typed into the join
   form; after joining, the page writes the pin into its address, so a
-  reload — or the browser restoring a discarded tab — resumes directly.
+  reload — or the browser restoring a discarded tab — resumes directly. The
+  relay replays nothing, so until the next heartbeat the page only says that
+  it is reconnecting.
 - **Host**: quiz source, `pin`/`host_token`, phase, roster, scores, the
   current question's answers and the frozen correct-order list, removed
   players, when each player was last heard from, and the latest snapshot

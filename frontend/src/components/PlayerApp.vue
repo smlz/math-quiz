@@ -26,7 +26,8 @@ import PlayerAnswerGrid from "./PlayerAnswerGrid.vue";
 import PlayerJoin from "./PlayerJoin.vue";
 import PlayerQuestion from "./PlayerQuestion.vue";
 
-type Status = "join" | "lobby" | "question" | "reveal" | "leaderboard" | "finished";
+// "resuming": back after a reload, with no snapshot yet to say what is going on.
+type Status = "join" | "resuming" | "lobby" | "question" | "reveal" | "leaderboard" | "finished";
 
 /** How long a sent message may stay unconfirmed before it is sent again,
  * until a snapshot shows it landed. This is the whole of the delivery
@@ -99,7 +100,7 @@ function sinceSent(kind: PlayerMessage["type"]): string {
 // Non-gameplay states (no answer grid) get their content vertically centered,
 // except leaderboard, which aligns to the top (bottom stays reserved/empty,
 // matching the host's button-anchored-to-bottom layout).
-const isCenteredState = computed(() => status.value === "lobby" || status.value === "finished");
+const isCenteredState = computed(() => ["resuming", "lobby", "finished"].includes(status.value));
 
 // "Arrived" only once a snapshot shows that the host has the answer: until
 // then it may still be lost, and the reveal would come as a surprise.
@@ -320,7 +321,7 @@ function leaveAfterRemoval() {
   status.value = "join";
 }
 
-function onJoined(session: StoredPlayerSession) {
+function onJoined(session: StoredPlayerSession, resumed: boolean) {
   addDebugSecret(session.playerToken);
   setDebugContext({ pin: session.pin, player: session.playerId });
   debugLog("session", {
@@ -340,7 +341,9 @@ function onJoined(session: StoredPlayerSession) {
   // Seeded so the first snapshot for the question we already answered is not
   // mistaken for a new one and does not clear the locked-in pick.
   currentQuestionIndex.value = session.answeredQuestionIndex;
-  status.value = "lobby";
+  // The relay replays nothing, so the next heartbeat says what is going on.
+  // Until then, "wait for the quiz to start" could be wrong by a long way.
+  status.value = resumed ? "resuming" : "lobby";
   lastSnapshotAt = lastPingAt = Date.now();
   lastSeq = 0;
 
@@ -401,7 +404,11 @@ onUnmounted(teardown);
       </header>
 
       <main class="player-app__main" :class="{ 'player-app__main--center': isCenteredState }">
-        <div v-if="status === 'lobby'" class="player-app__panel">
+        <div v-if="status === 'resuming'" class="player-app__panel">
+          <h2>Verbinde wieder…</h2>
+        </div>
+
+        <div v-else-if="status === 'lobby'" class="player-app__panel">
           <h2>Du bist dabei, {{ nickname }}!</h2>
           <p>Warte, bis das Quiz startet…</p>
         </div>
