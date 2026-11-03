@@ -13,11 +13,12 @@
 
 import { debugLog, describeError } from "../debug/debugLog";
 
-// In dev (and therefore in the Playwright e2e run) go through Vite's proxy
-// to the local backend; the production build is served from quiz.smlz.ch,
-// which has no backend of its own, so it targets the relay directly (that
-// origin is on the relay's CORS allowlist, see quiz_relay_api.py).
-const API_BASE = import.meta.env.DEV
+// In dev and in the build for the Playwright e2e run (`--mode e2e`) go through
+// Vite's proxy to the local backend; the production build is served from
+// quiz.smlz.ch, which has no backend of its own, so it targets the relay
+// directly (that origin is on the relay's CORS allowlist, see
+// quiz_relay_api.py).
+const API_BASE = import.meta.env.DEV || import.meta.env.MODE === "e2e"
   ? "/api/v1"
   : "https://quiz-api.fastapicloud.dev/api/v1";
 

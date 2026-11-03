@@ -112,8 +112,12 @@ npx playwright install firefox webkit   # once
 npm run test:e2e:all                    # or: npx playwright test --project=webkit
 ```
 
-The Playwright config starts both the backend and the Vite dev server itself,
-so no servers need to be running beforehand.
+The Playwright config starts the backend and builds and serves the frontend
+itself, so no servers need to be running beforehand. Port 4173 has to be free,
+so stop `npm run preview` first. Tests run two at a time; `--workers=4` tries
+more. While working on something, run just that part (`npx playwright test
+reliability --project=chromium`, `--last-failed`, `--only-changed=main`). Add
+`--trace on` to get a trace of a failure.
 
 ## License
 

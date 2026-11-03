@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Browser-driven e2e test (SPEC.md §12.2 step 6): boots the real FastAPI
-// backend and the Vite dev server (which proxies /api to it, see
-// vite.config.ts) and drives one host tab + player tabs against them.
+// backend and a production build behind `vite preview` (which proxies /api to
+// it, see vite.config.ts) and drives one host tab + player tabs against them.
 export default defineConfig({
   testDir: "./e2e",
   // The host setup screen now compiles every prompt/option with Typst
@@ -30,7 +30,7 @@ export default defineConfig({
     timeout: 60_000,
   },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:4173",
     // Recording every test is slow, and hardly any of them ever need it. A
     // local run has no retries: add `--trace on` to look into a failure.
     trace: "on-first-retry",
@@ -68,11 +68,19 @@ export default defineConfig({
       // binds "localhost" which can resolve to the IPv6 loopback (::1),
       // while the url check below only probes 127.0.0.1 (IPv4) -- without
       // --host 127.0.0.1 the health check never sees the server come up.
-      command: "npm run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+      //
+      // A build rather than the dev server: a page loads one bundle instead of
+      // some 70 modules, and it runs under the same Content-Security-Policy as
+      // the deployed site. `--mode e2e` keeps it off the live relay.
+      command:
+        "npx vite build --mode e2e --outDir dist-e2e --emptyOutDir && " +
+        "npx vite preview --mode e2e --outDir dist-e2e --host 127.0.0.1 --port 4173 --strictPort",
       cwd: ".",
-      url: "http://127.0.0.1:5173",
-      reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
+      url: "http://127.0.0.1:4173",
+      // Never reused: a server left running would serve an out-of-date build,
+      // and one from `npm run preview` would talk to the live relay.
+      reuseExistingServer: false,
+      timeout: 60_000,
       stdout: "pipe",
       stderr: "pipe",
     },
