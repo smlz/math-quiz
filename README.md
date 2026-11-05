@@ -4,14 +4,13 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 A minimalistic live quiz app (not only) for math lessons, designed for
-_simplicity_ and _privacy_. A _host_ runs the game on a shared screen
-(projector); _players_ join from their own devices with a 6-digit PIN or by
+_simplicity_ and _privacy_. A _host_ runs the game on a shared screen;
+_players_ join from their own devices with a 6-digit PIN or by
 scanning a QR code.
 
 Question prompts and answer options are authored as _Typst_ source and
 rendered in the browser via
-[typst.ts](https://github.com/Myriad-Dreamin/typst.ts) — plain text, math and
-figures all use the same syntax. Player devices only ever show four colored
+[typst.ts](https://github.com/Myriad-Dreamin/typst.ts). Player devices only show four colored
 A/B/C/D buttons; the question and its answer options are read off the host
 screen. Every question is multiple choice with exactly four options.
 
