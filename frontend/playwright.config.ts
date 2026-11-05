@@ -16,7 +16,7 @@ export default defineConfig({
   // the machine. Two at a time left the tests that watch real timers stable
   // on a 4-core laptop; `--workers` tries more.
   fullyParallel: true,
-  workers: 2,
+  workers: 4,
   // Once on CI, where a browser engine occasionally crashes outright (WebKit:
   // "internal error"). A test that only passes on its retry is still listed
   // as flaky in the report.
