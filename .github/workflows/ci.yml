@@ -17,10 +17,21 @@ jobs:
     outputs:
       test: ${{ steps.check.outputs.test }}
       deploy: ${{ steps.check.outputs.deploy }}
+      playwright: ${{ steps.playwright.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-tags: true
+      # The e2e job runs in the Playwright image of the locked version, so a
+      # Dependabot bump of @playwright/test moves the image along with it.
+      - id: playwright
+        run: |
+          VERSION=$(jq -r '.packages["node_modules/@playwright/test"].version' frontend/package-lock.json)
+          if [ -z "$VERSION" ] || [ "$VERSION" = null ]; then
+            echo "::error::no @playwright/test in frontend/package-lock.json"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - id: check
         run: |
           case "$GITHUB_REF" in
@@ -83,6 +94,15 @@ jobs:
     needs: release
     if: needs.release.outputs.test == 'true'
     runs-on: ubuntu-latest
+    # Playwright's image already holds every browser and the system libraries
+    # they need. `playwright install --with-deps` instead pulled those from
+    # the Ubuntu mirrors with apt, which the runner at times could not even
+    # resolve (minutes of retries, then a failed job). User 1001 is the
+    # runner's, who owns the mounted workspace and $HOME (Firefox refuses to
+    # run as root in a home that isn't root's).
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.release.outputs.playwright }}-noble
+      options: --user 1001
     strategy:
       # Let every browser finish, so one failure doesn't hide another.
       fail-fast: false
@@ -104,8 +124,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
         run: npm ci
-      - working-directory: frontend
-        run: npx playwright install --with-deps ${{ matrix.browser }}
       - working-directory: frontend
         run: npx playwright test --project=${{ matrix.browser }}
 
