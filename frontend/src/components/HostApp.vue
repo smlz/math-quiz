@@ -57,6 +57,9 @@ const SETTLE_AFTER_RECONNECT_MS = 3000;
 // A broadcast that takes this long has not failed yet, but the connection
 // that carries the answers is in trouble too.
 const SLOW_BROADCAST_MS = 2000;
+// Below this share of the class having answered, a reveal asks first: a click
+// that early is more likely a slip than a decision.
+const REVEAL_CONFIRM_SHARE = 0.8;
 
 // "setup" is the only state with no session behind it; every other value is
 // exactly the phase players are told about.
@@ -793,6 +796,12 @@ async function reveal() {
       inbox: inboxLive.value,
       broadcast: broadcastLive.value,
     });
+    if (!go) return;
+  } else if (answeredCount.value < REVEAL_CONFIRM_SHARE * roster.size) {
+    const go = window.confirm(
+      `Erst ${answeredCount.value} von ${roster.size} haben geantwortet. Trotzdem die Antwort zeigen?`,
+    );
+    debugLog("early reveal", { confirmed: go, answers: answeredCount.value, players: roster.size });
     if (!go) return;
   }
   const q = quiz.value.questions[currentQuestionIndex.value];

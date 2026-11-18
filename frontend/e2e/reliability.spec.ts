@@ -26,9 +26,10 @@ test.afterEach(async () => {
   await Promise.all(contexts.splice(0).map((context) => context.close()));
 });
 
-/** `acceptDialogs`: revealing before everyone has answered asks first when
- * the connection looks troubled, and a slow test machine can make a single
- * broadcast look like that. Only the test of that question handles it. */
+/** `acceptDialogs`: revealing before 80% have answered asks first, and so
+ * does revealing before everyone has answered when the connection looks
+ * troubled, which a slow test machine can make a single broadcast look like.
+ * Only the tests of those questions handle them. */
 async function createQuiz(browser: Browser, acceptDialogs = true): Promise<{ host: Page; pin: string }> {
   const host = await newDevice(browser);
   if (acceptDialogs) host.on("dialog", (dialog) => dialog.accept());
@@ -159,6 +160,33 @@ test("the reveal asks first while answers cannot arrive", async ({ browser }) =>
   // up, the warning is gone and the reveal goes ahead.
   await host.unroute("**/session/*/state");
   await expect(revealButton).not.toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+  host.on("dialog", (dialog) => dialog.accept());
+  await revealButton.click();
+  await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
+});
+
+test("the reveal asks first while few have answered", async ({ browser }) => {
+  const { host, pin } = await createQuiz(browser, false);
+  const ada = await joinByLink(browser, pin, "Ada");
+  await joinByLink(browser, pin, "Bo");
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  await answerOption(ada, 2);
+  await expect(ada.locator(".player-app__instruction")).toContainText("Antwort angekommen");
+  const revealButton = host.getByRole("button", { name: /Antwort zeigen · 1 von 2 beantwortet/ });
+  // Not the connection warning, which a slow broadcast can bring up briefly.
+  await expect(revealButton).not.toContainText("Verbindung unterbrochen", { timeout: 15_000 });
+
+  let warning = "";
+  host.once("dialog", async (dialog) => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await revealButton.click();
+  await expect.poll(() => warning).toContain("Erst 1 von 2 haben geantwortet");
+  // Declined: the question stays open.
+  await expect(revealButton).toBeVisible();
+
   host.on("dialog", (dialog) => dialog.accept());
   await revealButton.click();
   await expect(ada.locator(".player-app__reveal-correct")).toContainText("+13 Punkte");
