@@ -156,7 +156,9 @@ the quiz as a document with **one 16:9 page per question**, showing the
 prompt above the 2×2 A/B/C/D answer grid in the fixed option colors of §8,
 split per `answer-area-fraction`, with the **correct option highlighted**
 (gold ring, the other three dimmed) — the same design as the host screen's
-reveal state. The page is 1280pt × 720pt, so one Typst point maps to one
+reveal state. Each page shows its number and the page count ("2 / 4") in
+gray text centered at the bottom, like the host screen's progress
+counter. The page is 1280pt × 720pt, so one Typst point maps to one
 CSS pixel of the host screen's canonical 1280×720 canvas.
 
 This makes the quiz file self-sufficient: it can be proof-read, printed or

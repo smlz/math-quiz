@@ -33,7 +33,7 @@
 // Comments (//) and blank lines are allowed anywhere. Compiling the quiz
 // file with any Typst tool (CLI, VS Code Tinymist, ...) produces one 16:9
 // page per question, laid out like the live host screen, with the correct
-// option highlighted.
+// option highlighted and the page number ("2 / 4") centered at the bottom.
 //
 // --- Deutsch ---
 // Eine Quiz-Datei ist ein Typst-Dokument mit FESTER Struktur, kein beliebiges
@@ -63,12 +63,36 @@
 #let page-height = 720pt
 #let page-margin = 24pt
 #let gutter = 12pt
+// Extra room below the content for the page counter, like the host screen's
+// footer bar.
+#let footer-height = 32pt
 
 #let content-width = page-width - 2 * page-margin
-#let content-height = page-height - 2 * page-margin
+#let content-height = page-height - 2 * page-margin - footer-height
+
+// "2 / 4" centered at the bottom, styled like the host screen's progress
+// counter (gray sans-serif text). Only Arial is named, since Typst warns
+// about every family in a fallback list that is not installed; where Arial is
+// missing (some Linux systems) Typst warns once and uses its default font.
+#let _page-counter = context align(
+  center + horizon,
+  text(
+    font: "Arial",
+    size: 24pt,
+    fill: rgb("#888888"),
+    counter(page).display("1 / 1", both: true),
+  ),
+)
 
 #let quiz(body) = {
-  set page(width: page-width, height: page-height, margin: page-margin, fill: white)
+  set page(
+    width: page-width,
+    height: page-height,
+    margin: (x: page-margin, top: page-margin, bottom: page-margin + footer-height),
+    fill: white,
+    footer: block(height: footer-height, width: 100%, _page-counter),
+    footer-descent: footer-height / 2 - 6pt,
+  )
   set text(size: 22pt, fill: rgb("#1a1a1a"))
   body
 }
