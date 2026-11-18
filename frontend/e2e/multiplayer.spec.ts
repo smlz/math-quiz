@@ -129,7 +129,6 @@ test("the leaderboard animates from the old standings into the new ones", async 
   await host.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = await host.locator(".host-lobby__pin").textContent();
 
-  // Ada joins first, so with everyone on 0 points she is listed above Bo.
   for (const [page, nickname] of [
     [ada, "Ada"],
     [bo, "Bo"],
@@ -142,20 +141,39 @@ test("the leaderboard animates from the old standings into the new ones", async 
   await expect(host.locator(".host-lobby__count")).toHaveText("2 Spieler:innen beigetreten");
   await host.getByRole("button", { name: "Frage starten" }).click();
 
-  // Only Bo picks the correct option (C) and overtakes Ada.
+  // --- Question 1: both pick the correct option (C), Ada first. ---
   await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
-  await answerOption(ada, 0);
+  await answerOption(ada, 2);
   await answerOption(bo, 2);
   await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
   await host.getByRole("button", { name: "Rangliste anzeigen" }).click();
+
+  // Before this, everyone stood at 0 in no particular order: the points are
+  // counted up, but the rows are in their final order from the start.
+  const rows = host.locator(".leaderboard__row");
+  await expect(host.locator(".leaderboard__gain")).toHaveText(["+13", "+12"]);
+  await expect(rows.first()).toContainText("Ada");
+  await expect(rows.nth(1)).toContainText("Bo");
+  await expect(rows.nth(1).locator(".leaderboard__rank")).toHaveText("2");
+  await expect(rows.first().locator(".leaderboard__score")).toHaveText("13");
+  await expect(rows.nth(1).locator(".leaderboard__score")).toHaveText("12");
+  await expect(host.locator(".leaderboard__gain")).toHaveCount(0);
+  await expect(host.locator(".leaderboard__trend")).toHaveText(["", ""]);
+  await host.getByRole("button", { name: "Nächste Frage" }).click();
+
+  // --- Question 2: only Bo picks the correct option (B) and overtakes Ada. ---
+  await expect(ada.locator(".player-answer-grid__option")).toHaveCount(4);
+  await answerOption(ada, 0);
+  await answerOption(bo, 1);
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+  await host.getByRole("button", { name: "Endergebnis anzeigen" }).click();
 
   // The points won are shown while the score counts up ...
   await expect(host.locator(".leaderboard__gain")).toHaveText("+13");
 
   // ... and are gone again once the rows have settled in their new order.
-  const rows = host.locator(".leaderboard__row");
   await expect(rows.first()).toContainText("Bo");
-  await expect(rows.first().locator(".leaderboard__score")).toHaveText("13");
+  await expect(rows.first().locator(".leaderboard__score")).toHaveText("25");
   await expect(rows.nth(1)).toContainText("Ada");
   await expect(rows.nth(1).locator(".leaderboard__rank")).toHaveText("2");
   await expect(rows.nth(1).locator(".leaderboard__trend")).toHaveText("▼1");

@@ -61,8 +61,18 @@ function toRow(entry: LeaderboardEntry, slot: number, climbed = 0): Row {
   };
 }
 
+/** Before anyone had points (the first question), everyone was tied at 0 in
+ * no particular order, so there is no reordering to show: the rows start out
+ * in their final order and ranks, and only the points are counted up. */
+function startingPoint(previous: LeaderboardEntry[]): LeaderboardEntry[] {
+  if (previous.some((entry) => entry.score > 0)) return previous;
+  const scoreBefore = new Map(previous.map((entry) => [entry.player_id, entry.score]));
+  return props.standings.map((entry) => ({ ...entry, score: scoreBefore.get(entry.player_id) ?? 0 }));
+}
+const previous = props.previous && startingPoint(props.previous);
+
 const listEl = ref<HTMLElement | null>(null);
-const rows = ref<Row[]>((props.previous ?? props.standings).slice(0, TOP_N).map((entry, slot) => toRow(entry, slot)));
+const rows = ref<Row[]>((previous ?? props.standings).slice(0, TOP_N).map((entry, slot) => toRow(entry, slot)));
 const shownCount = computed(() => rows.value.filter((row) => !row.out).length);
 
 let animating = false;
@@ -192,7 +202,7 @@ watch(
 );
 
 onMounted(() => {
-  if (props.previous) void play(props.previous, props.standings);
+  if (previous) void play(previous, props.standings);
 });
 onUnmounted(() => {
   alive = false;
