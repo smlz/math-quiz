@@ -145,7 +145,14 @@ const reportBroadcast = reportAfterGrace((state) => {
 // the reveal must not wait five seconds to learn that answers cannot arrive.
 const inboxLive = ref<ConnectionStatus>("open");
 const broadcastLive = ref<ConnectionStatus>("open");
-const reconnectedAt = ref(0);
+// Only the inbox's recovery counts: answers come in through it alone, so a
+// broadcast that failed and recovered (during a leaderboard, say) has lost
+// none of them.
+const inboxReconnectedAt = ref(0);
+// When this page started the current question. An inbox that recovered
+// before then has lost none of its answers, which cannot be sent before it.
+// 0 after a reload, which leaves every recovery counting.
+const questionStartedAt = ref(0);
 // When the broadcast now under way started, if one is.
 const broadcastStartedAt = ref<number | null>(null);
 // Ticks while a session runs, so the "connection" state below follows time.
@@ -153,24 +160,25 @@ const clock = ref(Date.now());
 let clockTimer: number | null = null;
 
 function setInboxLive(state: ConnectionStatus) {
-  if (state === "open" && inboxLive.value !== "open") reconnectedAt.value = Date.now();
+  if (state === "open" && inboxLive.value !== "open") inboxReconnectedAt.value = Date.now();
   inboxLive.value = state;
   reportInbox(state);
 }
 
 function setBroadcastLive(state: ConnectionStatus) {
-  if (state === "open" && broadcastLive.value !== "open") reconnectedAt.value = Date.now();
   broadcastLive.value = state;
   reportBroadcast(state);
 }
 
 /** Whether answers on their way may not reach this page right now: a stream
- * or a broadcast is failing or stuck, or they only just recovered. */
+ * or a broadcast is failing or stuck, or the inbox only just recovered while
+ * the current question was open. */
 function connectionTroubleAt(now: number): boolean {
   return (
     inboxLive.value !== "open" ||
     broadcastLive.value !== "open" ||
-    now - reconnectedAt.value < SETTLE_AFTER_RECONNECT_MS ||
+    (inboxReconnectedAt.value > questionStartedAt.value &&
+      now - inboxReconnectedAt.value < SETTLE_AFTER_RECONNECT_MS) ||
     (broadcastStartedAt.value !== null && now - broadcastStartedAt.value > SLOW_BROADCAST_MS)
   );
 }
@@ -588,7 +596,8 @@ function disconnect() {
   reportBroadcast.cancel();
   inboxConnection.value = broadcastConnection.value = "open";
   inboxLive.value = broadcastLive.value = "open";
-  reconnectedAt.value = 0;
+  inboxReconnectedAt.value = 0;
+  questionStartedAt.value = 0;
   if (heartbeat !== null) {
     clearInterval(heartbeat);
     heartbeat = null;
@@ -778,6 +787,7 @@ async function startQuestion(index: number) {
   currentQuestionIndex.value = index;
   answers.clear();
   correctOrder.value = [];
+  questionStartedAt.value = Date.now();
   status.value = "question";
   debugLog("question started", { q: index, players: roster.size });
   await broadcast();
