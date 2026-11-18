@@ -1093,10 +1093,14 @@ onUnmounted(() => {
         {{ answerButtonLabel }}
       </button>
       <div class="host-app__footer">
+        <div class="host-app__footer-side">
+          <SoundToggle />
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+        </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
-        <SoundToggle />
-        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
-        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        <div class="host-app__footer-side host-app__footer-side--end">
+          <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        </div>
       </div>
     </template>
 
@@ -1104,10 +1108,14 @@ onUnmounted(() => {
       <QuestionCard :question="currentQuestion" :reveal-correct="true" :counts="countsArray" />
       <button type="button" @click="afterReveal">{{ isLastQuestion ? "Endergebnis anzeigen" : "Rangliste anzeigen" }}</button>
       <div class="host-app__footer">
+        <div class="host-app__footer-side">
+          <SoundToggle />
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+        </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
-        <SoundToggle />
-        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
-        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        <div class="host-app__footer-side host-app__footer-side--end">
+          <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        </div>
       </div>
     </template>
 
@@ -1123,10 +1131,14 @@ onUnmounted(() => {
       </div>
       <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Endergebnis anzeigen" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
+        <div class="host-app__footer-side">
+          <SoundToggle />
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+        </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
-        <SoundToggle />
-        <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
-        <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        <div class="host-app__footer-side host-app__footer-side--end">
+          <button type="button" class="host-app__end" @click="endQuizNow">Quiz abbrechen</button>
+        </div>
       </div>
     </template>
 
@@ -1136,14 +1148,22 @@ onUnmounted(() => {
       </div>
       <button type="button" @click="closeQuiz">Quiz beenden</button>
       <div class="host-app__footer">
+        <div class="host-app__footer-side">
+          <SoundToggle />
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+        </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
-        <SoundToggle />
-        <DebugExport role="host" />
+        <div class="host-app__footer-side host-app__footer-side--end">
+          <DebugExport role="host" />
+        </div>
       </div>
     </template>
 
     <HostPlayers
-      v-if="playersOpen && (status === 'question' || status === 'reveal' || status === 'leaderboard')"
+      v-if="
+        playersOpen &&
+        (status === 'question' || status === 'reveal' || status === 'leaderboard' || status === 'finished')
+      "
       :players="playerRows"
       @close="playersOpen = false"
       @remove="removePlayer"
@@ -1194,15 +1214,25 @@ onUnmounted(() => {
   text-decoration: underline;
   min-height: 1rem;
 }
+/* Three columns -- controls left, question counter centered, "Quiz
+   abbrechen" right -- with equal side columns so the counter stays centered
+   on the screen whatever the sides hold. */
 .host-app__footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
   gap: 1rem;
   margin-top: 0.4rem;
 }
+.host-app__footer-side {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.host-app__footer-side--end {
+  justify-content: flex-end;
+}
 .host-app__progress {
-  margin-right: auto;
   padding: 0.2rem 0.4rem;
   color: #888;
   font-size: 0.8rem;
