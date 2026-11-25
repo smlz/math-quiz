@@ -58,8 +58,8 @@ test("a quiz from a link shows images stored next to it", async ({ page }) => {
 
   await page.goto(`/create?src=${encodeURIComponent(`${ORIGIN}/quizzes/formen/quiz.typ`)}`);
 
-  await expect.poll(async () => (await imageHrefs(page, ".host-app__preview")).length).toBe(2);
-  for (const href of await imageHrefs(page, ".host-app__preview")) expect(href).toMatch(/^data:image\//);
+  await expect.poll(async () => (await imageHrefs(page, ".host-setup__preview")).length).toBe(2);
+  for (const href of await imageHrefs(page, ".host-setup__preview")) expect(href).toMatch(/^data:image\//);
   await expect(page.locator(".typst-figure__error")).toHaveCount(0);
   expect(requested.filter((path) => !path.endsWith(".typ")).sort()).toEqual([
     "/quizzes/formen/img/kreis.svg",
@@ -80,7 +80,7 @@ test("the image example in typst/ renders in full", async ({ page }) => {
 
   await page.goto(`/create?src=${encodeURIComponent(`${ORIGIN}/typst/images-quiz.typ`)}`);
 
-  await expect.poll(async () => (await imageHrefs(page, ".host-app__preview")).length).toBe(7);
+  await expect.poll(async () => (await imageHrefs(page, ".host-setup__preview")).length).toBe(7);
   await expect(page.locator(".typst-figure__error")).toHaveCount(0);
 });
 
@@ -91,7 +91,7 @@ test("a missing image says why it is missing", async ({ page }) => {
 
   await expect(page.locator(".typst-figure__error").first()).toContainText("HTTP 404");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
-  await expect(page.locator(".host-app__editor .host-app__errors")).toContainText("fehlt.svg");
+  await expect(page.locator(".host-setup__editor .host-setup__errors")).toContainText("fehlt.svg");
 });
 
 test("a pasted quiz is told that images need a link", async ({ page }) => {
@@ -118,7 +118,7 @@ test("images survive a host reload mid-quiz", async ({ page, request }) => {
     "/quizzes/shared/pixel.png": { body: PIXEL_PNG, contentType: "image/png" },
   });
   await page.goto(`/create?src=${encodeURIComponent(`${ORIGIN}/quizzes/formen/quiz.typ`)}`);
-  await expect.poll(async () => (await imageHrefs(page, ".host-app__preview")).length).toBe(2);
+  await expect.poll(async () => (await imageHrefs(page, ".host-setup__preview")).length).toBe(2);
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
   const pin = (await page.locator(".host-lobby__pin").textContent())!;
   await joinPlayer(request, pin, "Ada");

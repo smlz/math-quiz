@@ -35,7 +35,7 @@ test("a quiz cannot smuggle script into the rendered SVG", async ({ page }) => {
 )
 `);
 
-  const prompt = page.locator(".host-app__preview .typst-figure__canvas svg").first();
+  const prompt = page.locator(".host-setup__preview .typst-figure__canvas svg").first();
   await expect(prompt).toBeVisible();
   const found = await prompt.evaluate((svg) => ({
     hrefs: Array.from(svg.querySelectorAll("a")).map(

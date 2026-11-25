@@ -2,17 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { answersAtRisk, IDLE_LINK, openHostLink, type HostLink, type LinkStatus } from "../api/hostLink";
 import { acquireHostLock, type HostLock } from "../api/hostLock";
-import {
-  createSession,
-  RelayError,
-  type HostCredentials,
-  type IncomingMessage,
-  type Phase,
-  type SessionSnapshot,
-} from "../api/quizClient";
+import type { HostCredentials, IncomingMessage, Phase, SessionSnapshot } from "../api/quizClient";
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { addDebugSecret, debugLog, describeError, setDebugContext, startDebugLog } from "../debug/debugLog";
-import { QuizParseError } from "../quiz/errors";
 import {
   afterReveal,
   answerCounts,
@@ -33,24 +25,19 @@ import {
   toStored,
   type Game,
 } from "../quiz/hostGame";
-import { OPTION_LABELS } from "../quiz/optionStyle";
 import { parseQuiz } from "../quiz/parseQuiz";
-import { fetchQuizSource, resolveSource, type SourceLocation } from "../quiz/remoteSource";
-import { MINIMAL_QUIZ } from "../quiz/sampleQuiz";
-import { loadQuizImages, renderTypst } from "../quiz/typst";
+import { resolveSource } from "../quiz/remoteSource";
+import { loadQuizImages } from "../quiz/typst";
 import type { ParsedQuiz } from "../quiz/types";
 import { attachSound, playCheer, playFinale, playMusic, settleCheer, stopCheer, stopSound } from "../sound/hostSound";
-import AppFooter from "./AppFooter.vue";
 import DebugExport from "./DebugExport.vue";
 import HostLeaderboard from "./HostLeaderboard.vue";
 import HostLobby from "./HostLobby.vue";
 import HostPlayers from "./HostPlayers.vue";
+import HostSetup from "./HostSetup.vue";
 import QuestionCard from "./QuestionCard.vue";
-import ScreenFrame from "./ScreenFrame.vue";
 import SoundToggle from "./SoundToggle.vue";
-import TypstEditor from "./TypstEditor.vue";
 
-const PREVIEW_DEBOUNCE_MS = 300;
 // Below this share of the class having answered, a reveal asks first: a click
 // that early is more likely a slip than a decision.
 const REVEAL_CONFIRM_SHARE = 0.8;
@@ -61,62 +48,11 @@ type Status = "setup" | Phase;
 
 startDebugLog("host");
 
-// A `?src=` link (SPEC.md §3.5) replaces the minimal quiz; the editor starts
-// empty rather than briefly showing it while the file loads.
-const remoteSource = new URLSearchParams(location.search).get("src");
-const remoteLoading = ref(false);
-const remoteLoaded = ref(false);
-const remoteError = ref<string | null>(null);
-// Where the quiz in the editor came from, if it came from a link: its images
-// are fetched relative to that file (SPEC.md §3.5). It sticks for the whole
-// page, edits included, and a resumed session brings its own.
-let quizSrc: string | null = null;
-let quizLocation: SourceLocation | null = null;
-
-const quizSource = ref(remoteSource ? "" : MINIMAL_QUIZ);
-const loadErrors = ref<string[]>([]);
-// Set while "Quiz erstellen" is busy: first every prompt/option is compiled
-// with Typst before the lobby (and its QR code) is shown - the lobby only
-// ever appears once this has confirmed the whole document compiles cleanly -
-// then the session is created, which can take a while when the backend has
-// to cold-start.
-const creating = ref<"validating" | "connecting" | null>(null);
-const creatingLabel = computed(() =>
-  creating.value === "validating"
-    ? "Quiz wird geprüft …"
-    : "Verbindung zum Server wird aufgebaut …",
-);
-
-// Separate from the game so a half-typed draft in the editor never disturbs
-// the quiz that was validated for the running session.
-const previewQuiz = ref<ParsedQuiz | null>(null);
-const previewErrors = ref<string[]>([]);
-let previewTimer: ReturnType<typeof setTimeout> | undefined;
-
-watch(
-  quizSource,
-  (source) => {
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      // Nothing typed (or a link still loading) is not worth an error list.
-      if (!source.trim()) {
-        previewQuiz.value = null;
-        previewErrors.value = [];
-        return;
-      }
-      // Queued ahead of the preview's renders, which therefore see the images.
-      void loadQuizImages(source, quizLocation);
-      try {
-        previewQuiz.value = parseQuiz(source);
-        previewErrors.value = [];
-      } catch (e) {
-        previewQuiz.value = null;
-        previewErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
-      }
-    }, PREVIEW_DEBOUNCE_MS);
-  },
-  { immediate: true },
-);
+// The quiz source in the editor (HostSetup.vue), and the `?src=` link it came
+// from, if it did. Both are stored with a running session, and come back with
+// it after a reload.
+const quizSource = ref("");
+const quizSrc = ref<string | null>(null);
 
 const pin = ref<string | null>(null);
 const hostToken = ref<string | null>(null);
@@ -186,90 +122,14 @@ const previousRanking = computed(() => {
   return standings(current, current.round.scoresBefore);
 });
 
-// Structural parsing alone doesn't catch a Typst syntax/compile error inside
-// a prompt or option body - actually compiling every snippet here is the
-// only way to guarantee the lobby (and its QR code) is never shown for a
-// document that would fail to render mid-game.
-async function compileAllTypstSnippets(parsedQuiz: ParsedQuiz): Promise<string[]> {
-  const checks: Promise<string | null>[] = [];
-  parsedQuiz.questions.forEach((question, qIndex) => {
-    checks.push(
-      renderTypst(question.promptTypst)
-        .then(() => null)
-        .catch((e) => `Frage ${qIndex + 1}, Aufgabenstellung: ${e instanceof Error ? e.message : String(e)}`),
-    );
-    question.options.forEach((option, oIndex) => {
-      checks.push(
-        renderTypst(option.typst)
-          .then(() => null)
-          .catch(
-            (e) =>
-              `Frage ${qIndex + 1}, Option ${OPTION_LABELS[oIndex]}: ${e instanceof Error ? e.message : String(e)}`,
-          ),
-      );
-    });
-  });
-  const results = await Promise.all(checks);
-  return results.filter((r): r is string => r !== null);
-}
-
-function createSessionErrorMessage(error: unknown): string {
-  // The relay answers 503 when it cannot hand out a pin: every pin is taken,
-  // or too many sessions are live. Both clear up on their own.
-  if (error instanceof RelayError && error.status === 503) {
-    return "Gerade sind alle Spiel-PINs vergeben. Bitte versuche es in ein paar Minuten noch einmal.";
-  }
-  // 429: this network (usually the whole school) has started too many
-  // quizzes in a short time. One more is allowed every minute, so the wait
-  // is never longer than that.
-  if (error instanceof RelayError && error.status === 429) {
-    return "Von diesem Netzwerk aus wurden in kurzer Zeit zu viele Quiz gestartet. Bitte versuche es in etwa einer Minute noch einmal.";
-  }
-  return "Das Quiz konnte nicht gestartet werden, weil der Server nicht erreichbar ist. Bitte versuche es später noch einmal.";
-}
-
-async function loadAndCreateSession() {
-  loadErrors.value = [];
-  let quiz: ParsedQuiz;
-  try {
-    quiz = parseQuiz(quizSource.value);
-  } catch (e) {
-    loadErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
-    debugLog("quiz rejected", { issues: loadErrors.value.length, first: loadErrors.value[0] });
-    return;
-  }
-
-  creating.value = "validating";
-  // The preview may not have caught up with the last edit yet.
-  await loadQuizImages(quizSource.value, quizLocation);
-  const typstErrors = await compileAllTypstSnippets(quiz);
-  if (typstErrors.length) {
-    creating.value = null;
-    loadErrors.value = typstErrors;
-    debugLog("quiz does not compile", { issues: typstErrors.length, first: typstErrors[0] });
-    return;
-  }
-
-  let created: HostCredentials;
-  creating.value = "connecting";
-  try {
-    created = await createSession();
-  } catch (e) {
-    creating.value = null;
-    loadErrors.value = [createSessionErrorMessage(e)];
-    debugLog("session not created", { error: describeError(e) });
-    return;
-  }
-  addDebugSecret(created.hostToken);
-  debugLog("session created", { pin: created.pin, questions: quiz.questions.length });
-  creating.value = null;
-  pin.value = created.pin;
-  hostToken.value = created.hostToken;
+/** A quiz the editor has checked and created a session for: its lobby opens. */
+function hostNewQuiz(quiz: ParsedQuiz, credentials: HostCredentials) {
+  pin.value = credentials.pin;
+  hostToken.value = credentials.hostToken;
   game.value = newGame(quiz);
-
   // A pin just handed out: nobody else can hold it.
-  void acquireHostLock(created.pin, onTabLost).then((lock) => (hostLock = lock));
-  startHosting(game.value, created);
+  void acquireHostLock(credentials.pin, onTabLost).then((lock) => (hostLock = lock));
+  startHosting(game.value, credentials);
 }
 
 /** Opens the link for `hosted`, which broadcasts it from now on and hands it
@@ -350,7 +210,7 @@ function persistSession() {
     pin: pin.value,
     hostToken: hostToken.value,
     quizSource: quizSource.value,
-    quizSrc: quizSrc ?? undefined,
+    quizSrc: quizSrc.value ?? undefined,
     ...toStored(game.value),
     seq: link.seq,
   });
@@ -367,12 +227,9 @@ if (restored?.hostToken) {
     const restoredGame = fromStored(parseQuiz(restored.quizSource), restored);
     const restoredLocation = restored.quizSrc ? resolveSource(restored.quizSrc) : null;
     quizSource.value = restored.quizSource;
-    if (restored.quizSrc) {
-      quizSrc = restored.quizSrc;
-      quizLocation = restoredLocation;
-    }
+    quizSrc.value = restored.quizSrc ?? null;
     // Before the current question mounts, so its figures wait for the images.
-    void loadQuizImages(restored.quizSource, quizLocation);
+    void loadQuizImages(restored.quizSource, restoredLocation);
     pin.value = restored.pin;
     hostToken.value = restored.hostToken;
     restoredSeq = restored.seq ?? 0;
@@ -391,27 +248,6 @@ if (restored?.hostToken) {
 } else if (restored) {
   clearHostSession();
 }
-
-async function loadRemoteSource(src: string) {
-  remoteLoading.value = true;
-  try {
-    const source = await fetchQuizSource(src);
-    // Set before the editor changes, so the preview fetches the images.
-    quizSrc = src;
-    quizLocation = resolveSource(src);
-    quizSource.value = source;
-    remoteLoaded.value = true;
-  } catch (e) {
-    remoteError.value = e instanceof Error ? e.message : String(e);
-    debugLog("quiz link failed", { src, error: describeError(e) });
-  } finally {
-    remoteLoading.value = false;
-  }
-}
-
-// A session resumed after a reload keeps its own quiz; the link only fills
-// the editor for a fresh start.
-if (remoteSource && !hostToken.value) void loadRemoteSource(remoteSource);
 
 // Only once the teacher has turned the sound on (hostSound.ts). The lobby is
 // quiet. The tune starts with the first question, runs to the last
@@ -620,7 +456,6 @@ function leaveQuiz(farewell?: SessionSnapshot) {
 }
 
 onUnmounted(() => {
-  clearTimeout(previewTimer);
   link?.stop();
   detachSound?.();
   stopSound();
@@ -637,69 +472,22 @@ onUnmounted(() => {
       Verbindung wird wiederhergestellt …
     </p>
 
+    <!-- Kept alive while a quiz runs, so the editor is as it was left. -->
+    <KeepAlive>
+      <HostSetup
+        v-if="status === 'setup' && !otherTabHosts"
+        v-model:source="quizSource"
+        v-model:src="quizSrc"
+        @created="hostNewQuiz"
+      />
+    </KeepAlive>
+
     <template v-if="otherTabHosts">
       <div class="host-app__panel">
         <h2>Dieses Quiz läuft bereits in einem anderen Tab.</h2>
         <p>Schließe diesen Tab, oder führe das Quiz hier weiter. Der andere Tab hält dann an.</p>
         <button type="button" @click="takeOverHere">Hier übernehmen</button>
       </div>
-    </template>
-
-    <template v-else-if="status === 'setup'">
-      <div class="host-app__setup">
-        <div class="host-app__editor">
-          <div class="host-app__editor-header">
-            <h2>Quiz-Quelltext (Typst)</h2>
-            <a class="host-app__docs-link" href="/docs" target="_blank" rel="noopener">Anleitung: Quiz schreiben ↗</a>
-          </div>
-          <p v-if="remoteSource && (remoteLoading || remoteLoaded || remoteError)" class="host-app__remote">
-            <template v-if="remoteLoading">Quiz wird geladen: <code>{{ remoteSource }}</code> …</template>
-            <template v-else-if="remoteLoaded">Geladen von <code>{{ remoteSource }}</code></template>
-            <span v-else class="host-app__remote-error">{{ remoteError }}</span>
-          </p>
-          <TypstEditor v-model="quizSource" class="host-app__source" :readonly="remoteLoading" />
-          <ul v-if="loadErrors.length" class="host-app__errors">
-            <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
-          </ul>
-          <button
-            type="button"
-            class="host-app__submit"
-            :disabled="creating !== null || remoteLoading"
-            :aria-busy="creating !== null"
-            @click="loadAndCreateSession"
-          >
-            <template v-if="creating">
-              <span class="host-app__spinner" aria-hidden="true"></span>
-              {{ creatingLabel }}
-            </template>
-            <template v-else>Quiz erstellen</template>
-          </button>
-        </div>
-
-        <div class="host-app__preview">
-          <h2>Vorschau</h2>
-          <div class="host-app__preview-list">
-            <ul v-if="previewErrors.length" class="host-app__errors">
-              <li v-for="issue in previewErrors" :key="issue">{{ issue }}</li>
-            </ul>
-            <template v-else-if="previewQuiz">
-              <section
-                v-for="(question, i) in previewQuiz.questions"
-                :key="question.id"
-                class="host-app__preview-item"
-              >
-                <h3>Frage {{ i + 1 }} von {{ previewQuiz.questions.length }}</h3>
-                <ScreenFrame>
-                  <div class="host-app__preview-screen">
-                    <QuestionCard :question="question" :reveal-correct="true" />
-                  </div>
-                </ScreenFrame>
-              </section>
-            </template>
-          </div>
-        </div>
-      </div>
-      <AppFooter />
     </template>
 
     <template v-else-if="status === 'lobby' && pin">
@@ -864,86 +652,5 @@ onUnmounted(() => {
   color: #888;
   font-size: 0.8rem;
   line-height: 1.2;
-}
-.host-app__setup {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.5rem;
-  flex: 1;
-  min-height: 0;
-}
-.host-app__editor {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.host-app__editor-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.host-app__docs-link {
-  font-size: 0.9rem;
-  white-space: nowrap;
-}
-.host-app__remote {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  color: #888;
-  overflow-wrap: anywhere;
-}
-.host-app__remote-error {
-  color: #b00020;
-}
-.host-app__submit {
-  margin-top: 0.75rem;
-}
-.host-app__spinner {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.5em;
-  vertical-align: -0.15em;
-  border: 0.15em solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: host-app-spin 0.8s linear infinite;
-}
-@keyframes host-app-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.host-app__preview {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.host-app__preview-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-.host-app__preview-item {
-  margin-bottom: 1.5rem;
-}
-/* Mirrors `.host-app`'s own layout so the framed preview matches the real
-   host screen exactly. */
-.host-app__preview-screen {
-  width: 100%;
-  height: 100%;
-  padding: 1rem;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-}
-.host-app__source {
-  flex: 1;
-  min-height: 0;
-}
-.host-app__errors {
-  color: #b00020;
 }
 </style>

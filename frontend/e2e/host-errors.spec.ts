@@ -12,7 +12,7 @@ test("host explains that no pin is free when the relay answers 503", async ({ pa
   await page.goto("/create");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
 
-  await expect(page.locator(".host-app__errors")).toContainText("Gerade sind alle Spiel-PINs vergeben");
+  await expect(page.locator(".host-setup__errors")).toContainText("Gerade sind alle Spiel-PINs vergeben");
   await expect(page.getByRole("button", { name: "Quiz erstellen" })).toBeEnabled();
 });
 
@@ -30,7 +30,7 @@ test("host explains the rate limit when the relay answers 429", async ({ page })
   await page.goto("/create");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
 
-  await expect(page.locator(".host-app__errors")).toContainText("zu viele Quiz gestartet");
+  await expect(page.locator(".host-setup__errors")).toContainText("zu viele Quiz gestartet");
   await expect(page.getByRole("button", { name: "Quiz erstellen" })).toBeEnabled();
 });
 
@@ -41,5 +41,5 @@ test("host explains that the relay is unreachable", async ({ page }) => {
   await page.goto("/create");
   await page.getByRole("button", { name: "Quiz erstellen" }).click();
 
-  await expect(page.locator(".host-app__errors")).toContainText("Server nicht erreichbar");
+  await expect(page.locator(".host-setup__errors")).toContainText("Server nicht erreichbar");
 });
