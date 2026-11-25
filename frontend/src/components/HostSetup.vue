@@ -199,7 +199,9 @@ onUnmounted(() => clearTimeout(previewTimer));
         <template v-else-if="remoteLoaded">Geladen von <code>{{ remoteSource }}</code></template>
         <span v-else class="host-setup__remote-error">{{ remoteError }}</span>
       </p>
-      <TypstEditor v-model="source" class="host-setup__source" :readonly="remoteLoading" />
+      <!-- Read-only while "Quiz erstellen" is busy: the source stored with the
+           session must be the one that was checked. -->
+      <TypstEditor v-model="source" class="host-setup__source" :readonly="remoteLoading || creating !== null" />
       <ul v-if="loadErrors.length" class="host-setup__errors">
         <li v-for="issue in loadErrors" :key="issue">{{ issue }}</li>
       </ul>

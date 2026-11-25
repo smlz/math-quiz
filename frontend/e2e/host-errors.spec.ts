@@ -16,6 +16,25 @@ test("host explains that no pin is free when the relay answers 503", async ({ pa
   await expect(page.getByRole("button", { name: "Quiz erstellen" })).toBeEnabled();
 });
 
+test("the editor is read-only while the quiz is being created", async ({ page }) => {
+  let answer = () => {};
+  await page.route("**/api/v1/session", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await new Promise<void>((resolve) => (answer = resolve));
+    await route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"No free pin"}' });
+  });
+  await page.goto("/create");
+  const editor = page.locator(".typst-editor__input");
+  await expect(editor).toBeEditable();
+  await page.getByRole("button", { name: "Quiz erstellen" }).click();
+
+  await expect(page.getByRole("button", { name: /Verbindung zum Server/ })).toBeVisible();
+  await expect(editor).not.toBeEditable();
+  answer();
+  await expect(page.locator(".host-setup__errors")).toContainText("Gerade sind alle Spiel-PINs vergeben");
+  await expect(editor).toBeEditable();
+});
+
 test("host explains the rate limit when the relay answers 429", async ({ page }) => {
   await page.route("**/api/v1/session", (route) =>
     route.request().method() === "POST"
