@@ -43,6 +43,9 @@ const TICK_MS = 500;
 /** A gap this long between two ticks means the page was suspended (a locked
  * phone, a backgrounded tab), not that ticks merely ran late. */
 const SUSPENDED_AFTER_MS = 4 * TICK_MS;
+/** Sent with every join from this page load, so that the host can tell the
+ * device coming back from a join merely repeated (see PlayerMessage). */
+const VISIT = Math.floor(Math.random() * 2 ** 31);
 
 startDebugLog("player");
 
@@ -262,7 +265,7 @@ function tick() {
   // answered, so a join made (or repeated after a reload) in that phase stays
   // unconfirmed until the answer itself lands.
   if (!joinAcknowledged.value && nickname.value && now - lastSentAt.join >= RETRY_MS) {
-    void send({ type: "join", nickname: nickname.value }, lastSentAt.join > 0).catch(() => {});
+    void send({ type: "join", nickname: nickname.value, visit: VISIT }, lastSentAt.join > 0).catch(() => {});
   }
   if (
     status.value === "question" &&

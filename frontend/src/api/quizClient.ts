@@ -92,7 +92,11 @@ export interface SessionSnapshot {
 }
 
 export type PlayerMessage =
-  | { type: "join"; nickname: string }
+  /** `visit`: a random number drawn once per page load. A join that repeats
+   * it is a re-send; a known player's join with a new one is the device
+   * coming back (a reload, a restored tab, a second tab), which the host
+   * logs. Absent from player pages that predate it. */
+  | { type: "join"; nickname: string; visit?: number }
   | { type: "answer"; question_index: number; option_index: number };
 
 /** A player message as the relay delivers it: the sender is attributed by

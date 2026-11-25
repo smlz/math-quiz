@@ -205,6 +205,10 @@ const removed = reactive(new Set<string>());
 // When each player was last heard from, as a question index: their latest
 // answer or join, -1 for the lobby. Shows the teacher who stopped playing.
 const lastSeen = reactive(new Map<string, number>());
+// The page load each player's latest join came from (PlayerMessage `visit`),
+// for the log only. Not stored: after a reload of this page, a pupil whose
+// join is still being re-sent gets one line too many, nothing worse.
+const visits = new Map<string, number>();
 // The teacher's list of all players (HostPlayers.vue).
 const playersOpen = ref(false);
 
@@ -505,11 +509,16 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
   if (payload.type === "join") {
     // The first join wins: retries, and renames from an id already seen, are
     // ignored -- a real player always re-sends the nickname it joined with.
-    // Not logged: during a question a player's join stays unconfirmed, and
-    // is repeated every few seconds, until its answer lands (see PlayerApp).
     // A device re-sends its join after a reload, so it is still around.
     if (roster.has(player_id)) {
       lastSeen.set(player_id, Math.max(lastSeen.get(player_id) ?? -1, currentQuestionIndex.value));
+      // Logged once per page load rather than per join: during a question a
+      // join stays unconfirmed, and is repeated every few seconds, until the
+      // player's answer lands (see PlayerApp).
+      if (typeof payload.visit === "number" && visits.get(player_id) !== payload.visit) {
+        visits.set(player_id, payload.visit);
+        debugLog("rejoin", { player: player_id });
+      }
       return;
     }
     // A device that cleared its session at the end and joins again would
@@ -520,6 +529,7 @@ function handleMessage({ player_id, payload }: IncomingMessage) {
     const nickname = cleanNickname(payload.nickname, roster.values());
     if (!nickname) return ignore("unusable nickname");
     roster.set(player_id, nickname);
+    if (typeof payload.visit === "number") visits.set(player_id, payload.visit);
     if (!scores.has(player_id)) scores.set(player_id, 0);
     lastSeen.set(player_id, currentQuestionIndex.value);
     debugLog("join", { player: player_id });
@@ -947,6 +957,7 @@ function resetToSetup() {
   answers.clear();
   removed.clear();
   lastSeen.clear();
+  visits.clear();
   playersOpen.value = false;
   sessionRefused.value = false;
   hostLock?.release();

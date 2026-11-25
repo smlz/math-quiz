@@ -585,10 +585,17 @@ Player messages travel the other way:
 
 ```python
 PlayerMessage = (
-    {"type": "join", "nickname": str}
+    {"type": "join", "nickname": str, "visit": int}
     | {"type": "answer", "question_index": int, "option_index": int}
 )
 ```
+
+`visit` is a random number the player page draws once per load and sends
+with every join. It only feeds the host's diagnostic log: a join from a known
+player that carries a new `visit` means the device came back (a reload, a
+restored tab, a second tab) and gets one line. Re-sends of the same join
+repeat the number and get none. A join without it, from an older page,
+is handled as before.
 
 ## 7. API surface
 

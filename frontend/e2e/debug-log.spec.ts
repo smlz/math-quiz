@@ -73,6 +73,59 @@ test("host and player each keep a log that matches the other's and holds no toke
   await adaContext.close();
 });
 
+test("a pupil's reload shows in the teacher's log once, however often its join is re-sent", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const adaContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const ada = await adaContext.newPage();
+
+  await host.goto("/create");
+  await host.getByRole("button", { name: "Quiz erstellen" }).click();
+  const pin = (await host.locator(".host-lobby__pin").textContent())!;
+
+  const joins: { visit?: number }[] = [];
+  ada.on("request", (request) => {
+    if (request.method() !== "POST" || !request.url().endsWith(`/session/${pin}/message`)) return;
+    const message = request.postDataJSON();
+    if (message?.type === "join") joins.push(message);
+  });
+
+  await ada.goto(`/?pin=${pin}`);
+  await ada.getByLabel("Nickname").fill("Ada");
+  await ada.getByRole("button", { name: "Beitreten" }).click();
+  await expect(ada.getByRole("heading", { name: "Du bist dabei, Ada!" })).toBeVisible();
+  const { playerId } = await ada.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    `math-quiz-player:${pin}`,
+  );
+
+  await host.getByRole("button", { name: "Frage starten" }).click();
+  // During a question only the answer can confirm a join, so the reloaded
+  // page keeps re-sending it until Ada answers.
+  const beforeReload = joins.length;
+  await ada.reload();
+  await expect.poll(() => joins.length - beforeReload, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await ada.locator(".player-answer-grid__option").nth(2).click();
+  await host.getByRole("button", { name: "Alle haben geantwortet — Antwort zeigen" }).click();
+
+  const firstVisits = new Set(joins.slice(0, beforeReload).map((join) => join.visit));
+  const laterVisits = new Set(joins.slice(beforeReload).map((join) => join.visit));
+  expect(firstVisits.size).toBe(1);
+  expect(laterVisits.size).toBe(1);
+  expect(laterVisits).not.toEqual(firstVisits);
+
+  const hostLog = await readDebugPage(host, "Als Lehrperson", [`rejoin player=${playerId}`, "revealed q=0"]);
+  const lines = hostLog.split("\n");
+  expect(lines.filter((line) => line.includes(` join player=${playerId}`))).toHaveLength(1);
+  // One plain line: repeats would have been collapsed into one with a count.
+  expect(lines.filter((line) => line.includes(` rejoin player=${playerId}`))).toEqual([
+    expect.stringMatching(new RegExp(`^\\S+ rejoin player=${playerId}$`)),
+  ]);
+
+  await hostContext.close();
+  await adaContext.close();
+});
+
 test("a pupil finds the copy button on the final screen", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const adaContext = await browser.newContext();
