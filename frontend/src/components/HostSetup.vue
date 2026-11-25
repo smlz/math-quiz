@@ -2,7 +2,7 @@
 // The host's first screen: the quiz's Typst source beside a live preview.
 // "Quiz erstellen" checks and compiles the whole quiz, then creates the
 // session that HostApp hosts from then on.
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { createSession, RelayError, type HostCredentials } from "../api/quizClient";
 import { addDebugSecret, debugLog, describeError } from "../debug/debugLog";
 import { QuizParseError } from "../quiz/errors";
@@ -87,6 +87,7 @@ async function loadRemoteSource(link: string) {
     quizLocation = resolveSource(link);
     src.value = link;
     source.value = fetched;
+    reloadBringsBack = fetched;
     remoteLoaded.value = true;
   } catch (e) {
     remoteError.value = e instanceof Error ? e.message : String(e);
@@ -96,13 +97,42 @@ async function loadRemoteSource(link: string) {
   }
 }
 
+// What a reload of the page would bring back into the editor: the minimal
+// quiz, or the `?src=` link's file as it was loaded. Null when that is not
+// known -- a quiz carried over from a session resumed after a reload, from a
+// page opened with a link, may or may not have been edited.
+let reloadBringsBack: string | null = remoteSource ? null : MINIMAL_QUIZ;
+
 // An empty editor is filled from a `?src=` link (SPEC.md §3.5) or else with
 // the minimal quiz; it starts empty rather than briefly showing that while
 // the file loads. A session resumed after a reload keeps its own quiz.
 if (!source.value) {
-  if (remoteSource) void loadRemoteSource(remoteSource);
-  else source.value = MINIMAL_QUIZ;
+  if (remoteSource) {
+    // Should the link fail, a reload fails the same way.
+    reloadBringsBack = "";
+    void loadRemoteSource(remoteSource);
+  } else {
+    source.value = MINIMAL_QUIZ;
+  }
 }
+
+// The editor saves nothing: a reload, a closed tab or a link followed by
+// mistake would take any edits along, so the browser asks first. A running
+// session stores its own source, which is why this only applies while the
+// editor is showing (it is kept alive in the background during a quiz).
+const sameText = (a: string, b: string) => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
+function askBeforeLeaving(event: BeforeUnloadEvent) {
+  if (reloadBringsBack !== null && sameText(source.value, reloadBringsBack)) return;
+  event.preventDefault();
+  // Browsers that predate preventDefault() here.
+  event.returnValue = true;
+}
+const watchLeaving = () => window.addEventListener("beforeunload", askBeforeLeaving);
+const unwatchLeaving = () => window.removeEventListener("beforeunload", askBeforeLeaving);
+onMounted(watchLeaving);
+onActivated(watchLeaving);
+onDeactivated(unwatchLeaving);
+onUnmounted(unwatchLeaving);
 
 // Structural parsing alone doesn't catch a Typst syntax/compile error inside
 // a prompt or option body - actually compiling every snippet here is the
