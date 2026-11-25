@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import {
   createSession,
   endSession,
-  pointsForReveal,
   publishState,
-  rankForScore,
   reportAfterGrace,
   subscribeToMessages,
   HEARTBEAT_MS,
@@ -20,14 +18,32 @@ import { acquireHostLock, type HostLock } from "../api/hostLock";
 import { clearHostSession, loadHostSession, saveHostSession } from "../api/storedSession";
 import { addDebugSecret, debugLog, describeError, setDebugContext, startDebugLog } from "../debug/debugLog";
 import { QuizParseError } from "../quiz/errors";
+import {
+  afterReveal,
+  answerCounts,
+  buildSnapshot,
+  currentQuestion,
+  fromStored,
+  isLastQuestion,
+  isRevealed,
+  mergePlayer,
+  newGame,
+  nextQuestion,
+  playerRows,
+  questionIndex,
+  receive,
+  removePlayer,
+  reveal,
+  standings,
+  toStored,
+  type Game,
+} from "../quiz/hostGame";
 import { OPTION_LABELS } from "../quiz/optionStyle";
-import { cleanNickname } from "../quiz/nickname";
 import { parseQuiz } from "../quiz/parseQuiz";
-import { latestPlayedQuestion, mergePlayers, missedLatestQuestion, type PlayerRow } from "../quiz/roster";
 import { fetchQuizSource, resolveSource, type SourceLocation } from "../quiz/remoteSource";
 import { MINIMAL_QUIZ } from "../quiz/sampleQuiz";
 import { loadQuizImages, renderTypst } from "../quiz/typst";
-import type { LeaderboardEntry, ParsedQuiz, QuestionState } from "../quiz/types";
+import type { ParsedQuiz } from "../quiz/types";
 import { attachSound, playCheer, playFinale, playMusic, settleCheer, stopCheer, stopSound } from "../sound/hostSound";
 import AppFooter from "./AppFooter.vue";
 import DebugExport from "./DebugExport.vue";
@@ -40,9 +56,6 @@ import SoundToggle from "./SoundToggle.vue";
 import TypstEditor from "./TypstEditor.vue";
 
 const PREVIEW_DEBOUNCE_MS = 300;
-// Generous for one class, but bounds what a flood of joins from strangers who
-// guessed the pin can do to the roster, the projector and every snapshot.
-const MAX_PLAYERS = 200;
 // Player messages arrive in bursts (a class joining, everyone answering), and
 // each snapshot goes out to every player: one per message would be quadratic.
 // All messages within this window are confirmed by a single snapshot instead.
@@ -81,7 +94,6 @@ let quizLocation: SourceLocation | null = null;
 
 const quizSource = ref(remoteSource ? "" : MINIMAL_QUIZ);
 const loadErrors = ref<string[]>([]);
-const quiz = ref<ParsedQuiz | null>(null);
 // Set while "Quiz erstellen" is busy: first every prompt/option is compiled
 // with Typst before the lobby (and its QR code) is shown - the lobby only
 // ever appears once this has confirmed the whole document compiles cleanly -
@@ -94,7 +106,7 @@ const creatingLabel = computed(() =>
     : "Verbindung zum Server wird aufgebaut …",
 );
 
-// Separate from `quiz` so a half-typed draft in the editor never disturbs
+// Separate from the game so a half-typed draft in the editor never disturbs
 // the quiz that was validated for the running session.
 const previewQuiz = ref<ParsedQuiz | null>(null);
 const previewErrors = ref<string[]>([]);
@@ -127,7 +139,9 @@ watch(
 
 const pin = ref<string | null>(null);
 const hostToken = ref<string | null>(null);
-const status = ref<Status>("setup");
+// The quiz being hosted (hostGame.ts); null while the editor is showing.
+const game = ref<Game | null>(null);
+const status = computed<Status>(() => game.value?.round.phase ?? "setup");
 // Inbox and broadcasts fail independently, and either one is worth a banner:
 // a successful broadcast says nothing about whether messages still arrive.
 const inboxConnection = ref<ConnectionStatus>("open");
@@ -193,32 +207,12 @@ let hostsHere = true;
 let hostLock: HostLock | null = null;
 const otherTabHosts = ref(false);
 
-const roster = reactive(new Map<string, string>()); // player_id -> nickname
-const scores = reactive(new Map<string, number>()); // player_id -> cumulative score
-// The scores as they stood before the current question was revealed, so the
-// leaderboard can show what the question changed. Not persisted: after a
-// reload the leaderboard simply appears in its final state.
-const scoresBeforeReveal = ref<Map<string, number> | null>(null);
-// Players the teacher removed (e.g. for a rude nickname). Their ids are
-// ignored for the rest of the session; rejoining takes a fresh id.
-const removed = reactive(new Set<string>());
-// When each player was last heard from, as a question index: their latest
-// answer or join, -1 for the lobby. Shows the teacher who stopped playing.
-const lastSeen = reactive(new Map<string, number>());
 // The page load each player's latest join came from (PlayerMessage `visit`),
 // for the log only. Not stored: after a reload of this page, a pupil whose
 // join is still being re-sent gets one line too many, nothing worse.
 const visits = new Map<string, number>();
 // The teacher's list of all players (HostPlayers.vue).
 const playersOpen = ref(false);
-
-const currentQuestionIndex = ref(-1);
-// Insertion order is arrival order, which is exactly what decides the 13-to-10
-// ladder -- no timestamps needed.
-const answers = reactive(new Map<string, number>()); // player_id -> option_index
-// Who answered the current question correctly, in arrival order. Frozen at
-// reveal so re-broadcasting the same snapshot can never re-score anyone.
-const correctOrder = ref<string[]>([]);
 
 let unsubscribe: (() => void) | null = null;
 let heartbeat: number | null = null;
@@ -237,63 +231,45 @@ function nextSeq(): number {
   return lastSeq;
 }
 
-const lobbyPlayers = computed(() => [...roster].map(([player_id, nickname]) => ({ player_id, nickname })));
-
-const currentQuestion = computed<QuestionState | null>(() =>
-  quiz.value && currentQuestionIndex.value >= 0 ? quiz.value.questions[currentQuestionIndex.value] : null,
+const playerCount = computed(() => game.value?.roster.size ?? 0);
+const lobbyPlayers = computed(() =>
+  [...(game.value?.roster ?? [])].map(([player_id, nickname]) => ({ player_id, nickname })),
 );
+const question = computed(() => game.value && currentQuestion(game.value));
+const counts = computed(() => (game.value ? answerCounts(game.value) : []));
+const answeredCount = computed(() => {
+  const round = game.value?.round;
+  return round?.phase === "question" ? round.answers.size : 0;
+});
 
-const countsArray = computed<number[]>(() =>
-  currentQuestion.value
-    ? currentQuestion.value.options.map((_, i) => [...answers.values()].filter((v) => v === i).length)
-    : [],
-);
-
-const answeredCount = computed(() => answers.size);
-
-const allAnswered = computed(() => roster.size > 0 && answeredCount.value >= roster.size);
+const allAnswered = computed(() => playerCount.value > 0 && answeredCount.value >= playerCount.value);
 // Answers still on their way could be lost by revealing now.
 const revealAtRisk = computed(() => connectionTrouble.value && !allAnswered.value);
 
 const answerButtonLabel = computed(() =>
   allAnswered.value
     ? "Alle haben geantwortet — Antwort zeigen"
-    : `Antwort zeigen · ${answeredCount.value} von ${roster.size} beantwortet` +
+    : `Antwort zeigen · ${answeredCount.value} von ${playerCount.value} beantwortet` +
       (revealAtRisk.value ? " · Verbindung unterbrochen" : ""),
 );
 
-const playerRows = computed<PlayerRow[]>(() => {
-  const latestPlayed = latestPlayedQuestion(status.value, currentQuestionIndex.value);
-  return [...roster].map(([player_id, nickname]) => ({
-    player_id,
-    nickname,
-    score: scores.get(player_id) ?? 0,
-    lastSeen: lastSeen.get(player_id) ?? -1,
-    missedLatest: missedLatestQuestion(lastSeen, player_id, latestPlayed),
-  }));
+const players = computed(() => (game.value ? playerRows(game.value) : []));
+const onLastQuestion = computed(() => !!game.value && isLastQuestion(game.value));
+
+const questionProgress = computed(() => {
+  const current = game.value;
+  return current && questionIndex(current) >= 0
+    ? `${questionIndex(current) + 1} / ${current.quiz.questions.length}`
+    : "";
 });
 
-const isLastQuestion = computed(
-  () => !!quiz.value && currentQuestionIndex.value === quiz.value.questions.length - 1,
-);
-
-const questionProgress = computed(() =>
-  quiz.value && currentQuestionIndex.value >= 0
-    ? `${currentQuestionIndex.value + 1} / ${quiz.value.questions.length}`
-    : "",
-);
-
-function rankPlayers(scoreByPlayer: Map<string, number>): LeaderboardEntry[] {
-  const entries = [...roster.entries()]
-    .map(([player_id, nickname]) => ({ player_id, nickname, score: scoreByPlayer.get(player_id) ?? 0 }))
-    .sort((a, b) => b.score - a.score);
-  // The same rule the players use to work out their own rank.
-  const allScores = entries.map((entry) => entry.score);
-  return entries.map((entry) => ({ ...entry, rank: rankForScore(allScores, entry.score) }));
-}
-
-const standings = computed(() => rankPlayers(scores));
-const previousStandings = computed(() => scoresBeforeReveal.value && rankPlayers(scoresBeforeReveal.value));
+const ranking = computed(() => (game.value ? standings(game.value) : []));
+// What the question just revealed changed, for the leaderboard to show.
+const previousRanking = computed(() => {
+  const current = game.value;
+  if (!current || !isRevealed(current.round) || !current.round.scoresBefore) return null;
+  return standings(current, current.round.scoresBefore);
+});
 
 // Structural parsing alone doesn't catch a Typst syntax/compile error inside
 // a prompt or option body - actually compiling every snippet here is the
@@ -339,10 +315,10 @@ function createSessionErrorMessage(error: unknown): string {
 
 async function loadAndCreateSession() {
   loadErrors.value = [];
+  let quiz: ParsedQuiz;
   try {
-    quiz.value = parseQuiz(quizSource.value);
+    quiz = parseQuiz(quizSource.value);
   } catch (e) {
-    quiz.value = null;
     loadErrors.value = e instanceof QuizParseError ? e.issues : [String(e)];
     debugLog("quiz rejected", { issues: loadErrors.value.length, first: loadErrors.value[0] });
     return;
@@ -351,10 +327,9 @@ async function loadAndCreateSession() {
   creating.value = "validating";
   // The preview may not have caught up with the last edit yet.
   await loadQuizImages(quizSource.value, quizLocation);
-  const typstErrors = await compileAllTypstSnippets(quiz.value);
+  const typstErrors = await compileAllTypstSnippets(quiz);
   if (typstErrors.length) {
     creating.value = null;
-    quiz.value = null;
     loadErrors.value = typstErrors;
     debugLog("quiz does not compile", { issues: typstErrors.length, first: typstErrors[0] });
     return;
@@ -366,60 +341,21 @@ async function loadAndCreateSession() {
     created = await createSession();
   } catch (e) {
     creating.value = null;
-    quiz.value = null;
     loadErrors.value = [createSessionErrorMessage(e)];
     debugLog("session not created", { error: describeError(e) });
     return;
   }
   addDebugSecret(created.hostToken);
-  debugLog("session created", { pin: created.pin, questions: quiz.value.questions.length });
+  debugLog("session created", { pin: created.pin, questions: quiz.questions.length });
   creating.value = null;
   pin.value = created.pin;
   hostToken.value = created.hostToken;
+  game.value = newGame(quiz);
 
-  status.value = "lobby";
   // A pin just handed out: nobody else can hold it.
   void acquireHostLock(created.pin, onTabLost).then((lock) => (hostLock = lock));
   connect(created.pin, created.hostToken);
   await broadcast();
-}
-
-/** The whole of what players are told, rebuilt from scratch every time.
- *
- * `players` carries a different meaning per phase (see SessionSnapshot):
- * who has joined, who has answered, who was correct and in what order, or
- * the rank order. From the reveal on it also carries everyone's total, so a
- * player's score is always the host's. Nicknames stay here on the host.
- */
-function buildSnapshot(): SessionSnapshot {
-  const phase = status.value === "setup" ? "lobby" : status.value;
-  const players =
-    phase === "lobby"
-      ? [...roster.keys()]
-      : phase === "question"
-        ? [...answers.keys()]
-        : phase === "reveal"
-          ? correctOrder.value
-          : standings.value.map((entry) => entry.player_id);
-
-  return {
-    phase,
-    question_index: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
-    players,
-    seq: nextSeq(),
-    ...(phase === "reveal" && currentQuestion.value
-      ? {
-          correct_index: currentQuestion.value.correctIndex,
-          // So that an answer that never arrived is not taken for a wrong one.
-          answered: [...answers.keys()],
-        }
-      : {}),
-    ...(phase === "reveal" || phase === "leaderboard" || phase === "finished"
-      ? { scores: Object.fromEntries(standings.value.map((entry) => [entry.player_id, entry.score])) }
-      : {}),
-    // Tells a removed player's device to drop its identity.
-    ...(removed.size ? { removed: [...removed] } : {}),
-  };
 }
 
 /** Publishes the current snapshot. Called on every change *and* on a timer:
@@ -428,7 +364,7 @@ function buildSnapshot(): SessionSnapshot {
 async function broadcast() {
   // Whatever a scheduled broadcast was going to confirm is in this one.
   cancelPendingBroadcast();
-  if (!pin.value || !hostToken.value || status.value === "setup" || sessionRefused.value || !hostsHere) return;
+  if (!pin.value || !hostToken.value || !game.value || sessionRefused.value || !hostsHere) return;
   // A change made meanwhile goes out as soon as this broadcast is done, in
   // the snapshot built then.
   if (broadcasting) {
@@ -438,7 +374,7 @@ async function broadcast() {
   const controller = new AbortController();
   broadcasting = controller;
   broadcastStartedAt.value = Date.now();
-  const snapshot = buildSnapshot();
+  const snapshot = { ...buildSnapshot(game.value), seq: nextSeq() };
   try {
     await publishState(pin.value, hostToken.value, snapshot, controller.signal);
     // Repeats collapse into one line, so an unchanged heartbeat costs nothing.
@@ -489,68 +425,43 @@ function cancelPendingBroadcast() {
   pendingBroadcast = null;
 }
 
-/** Anyone who knows (or guesses) the pin can mint a player token and send
- * any JSON object at all, so the payload is untrusted input: only the
- * relay-attributed `player_id` can be relied on. */
+/** A player's message: hostGame.ts decides what becomes of it, this logs it
+ * and confirms it to the players. */
 function handleMessage({ player_id, payload }: IncomingMessage) {
+  if (!game.value) return;
+  const received = receive(game.value, player_id, payload);
   // Whatever is ignored is logged with the reason: that is what answers "my
   // answer didn't count". For an answer, also what it was, so a late one can
   // be told right from wrong -- numbers only, the payload is untrusted.
-  const loggable = (value: unknown) => (typeof value === "number" ? value : typeof value);
-  const ignore = (reason: string) =>
+  if (typeof received === "object") {
+    const loggable = (value: unknown) => (typeof value === "number" ? value : typeof value);
     debugLog(`${String(payload?.type)} ignored`, {
       player: player_id,
-      reason,
+      reason: received.ignored,
       ...(payload?.type === "answer"
         ? { q: loggable(payload.question_index), option: loggable(payload.option_index) }
         : {}),
     });
-  if (removed.has(player_id)) return ignore("removed");
+    return;
+  }
   if (payload.type === "join") {
-    // The first join wins: retries, and renames from an id already seen, are
-    // ignored -- a real player always re-sends the nickname it joined with.
-    // A device re-sends its join after a reload, so it is still around.
-    if (roster.has(player_id)) {
-      lastSeen.set(player_id, Math.max(lastSeen.get(player_id) ?? -1, currentQuestionIndex.value));
+    const cameBack = typeof payload.visit === "number" && visits.get(player_id) !== payload.visit;
+    if (typeof payload.visit === "number") visits.set(player_id, payload.visit);
+    if (received === "repeat") {
       // Logged once per page load rather than per join: during a question a
       // join stays unconfirmed, and is repeated every few seconds, until the
-      // player's answer lands (see PlayerApp).
-      if (typeof payload.visit === "number" && visits.get(player_id) !== payload.visit) {
-        visits.set(player_id, payload.visit);
-        debugLog("rejoin", { player: player_id });
-      }
+      // player's answer lands (see PlayerApp). Nothing to confirm either.
+      if (cameBack) debugLog("rejoin", { player: player_id });
       return;
     }
-    // A device that cleared its session at the end and joins again would
-    // otherwise be listed a second time, with no points and a last place.
-    if (status.value === "finished") return ignore("quiz finished");
-    if (roster.size >= MAX_PLAYERS) return ignore("roster full");
-    if (typeof payload.nickname !== "string") return ignore("no nickname");
-    const nickname = cleanNickname(payload.nickname, roster.values());
-    if (!nickname) return ignore("unusable nickname");
-    roster.set(player_id, nickname);
-    if (typeof payload.visit === "number") visits.set(player_id, payload.visit);
-    if (!scores.has(player_id)) scores.set(player_id, 0);
-    lastSeen.set(player_id, currentQuestionIndex.value);
     debugLog("join", { player: player_id });
-  } else if (payload.type === "answer") {
-    if (status.value !== "question" || !currentQuestion.value) return ignore(`phase ${status.value}`);
-    if (payload.question_index !== currentQuestionIndex.value) {
-      return ignore(`for question ${payload.question_index}, now ${currentQuestionIndex.value}`);
-    }
-    // Unknown senders are ignored: anyone who knows the pin can mint a token,
-    // but only players the host has seen join can score.
-    if (!roster.has(player_id)) return ignore("not joined");
-    if (answers.has(player_id)) return ignore("already answered");
-    const optionIndex = payload.option_index;
-    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= currentQuestion.value.options.length) {
-      return ignore("invalid option");
-    }
-    answers.set(player_id, optionIndex);
-    lastSeen.set(player_id, currentQuestionIndex.value);
-    debugLog("answer", { player: player_id, q: currentQuestionIndex.value, option: optionIndex, nth: answers.size });
   } else {
-    return ignore("unknown type");
+    debugLog("answer", {
+      player: player_id,
+      q: payload.question_index,
+      option: payload.option_index,
+      nth: answeredCount.value,
+    });
   }
   // Confirm well before the next heartbeat -- and before the sender's retry
   // timer runs out -- so it sees its own message land without re-sending.
@@ -567,19 +478,17 @@ watch(connection, (state) =>
 
 // Who is who, for matching a pupil's log to this one. Kept in full rather than
 // left to the "join" lines, which a long quiz may push out of the log.
-watch(
-  () => [pin.value, status.value, currentQuestionIndex.value, [...roster], [...scores], [...removed]],
-  () =>
-    setDebugContext({
-      pin: pin.value,
-      phase: status.value,
-      question: currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : null,
-      questions: quiz.value?.questions.length ?? null,
-      players: [...roster.keys()].map((id) => `${id} (${scores.get(id) ?? 0})`),
-      removed: [...removed],
-    }),
-  { deep: true, immediate: true },
-);
+watchEffect(() => {
+  const current = game.value;
+  setDebugContext({
+    pin: pin.value,
+    phase: status.value,
+    question: current && questionIndex(current) >= 0 ? questionIndex(current) : null,
+    questions: current?.quiz.questions.length ?? null,
+    players: current ? [...current.roster.keys()].map((id) => `${id} (${current.scores.get(id) ?? 0})`) : [],
+    removed: current ? [...current.removed] : [],
+  });
+});
 
 function connect(sessionPin: string, token: string) {
   // Not connected until the stream says so. Its first opening counts as a
@@ -623,40 +532,18 @@ function disconnect() {
 // localStorage until the host closes the quiz. That includes the final
 // screen, which keeps broadcasting after a reload too.
 function persistSession() {
-  if (!pin.value || !hostToken.value || status.value === "setup" || !hostsHere) return;
+  if (!pin.value || !hostToken.value || !game.value || !hostsHere) return;
   saveHostSession({
     pin: pin.value,
     hostToken: hostToken.value,
     quizSource: quizSource.value,
     quizSrc: quizSrc ?? undefined,
-    status: status.value,
-    currentQuestionIndex: currentQuestionIndex.value,
-    roster: [...roster],
-    scores: [...scores],
-    answers: [...answers],
-    correctOrder: correctOrder.value,
-    removed: [...removed],
-    lastSeen: [...lastSeen],
+    ...toStored(game.value),
     seq: lastSeq,
   });
 }
 
-watch(
-  () => [
-    pin.value,
-    hostToken.value,
-    status.value,
-    currentQuestionIndex.value,
-    correctOrder.value,
-    [...roster],
-    [...scores],
-    [...answers],
-    [...removed],
-    [...lastSeen],
-  ],
-  persistSession,
-  { deep: true },
-);
+watch(() => game.value && toStored(game.value), persistSession);
 
 // Restored synchronously so a reload never flashes the setup screen; the
 // quiz source itself is re-parsed rather than re-validated with Typst, since
@@ -664,29 +551,19 @@ watch(
 const restored = loadHostSession();
 if (restored?.hostToken) {
   try {
-    quiz.value = parseQuiz(restored.quizSource);
+    const restoredGame = fromStored(parseQuiz(restored.quizSource), restored);
+    const restoredLocation = restored.quizSrc ? resolveSource(restored.quizSrc) : null;
     quizSource.value = restored.quizSource;
     if (restored.quizSrc) {
       quizSrc = restored.quizSrc;
-      quizLocation = resolveSource(restored.quizSrc);
+      quizLocation = restoredLocation;
     }
     // Before the current question mounts, so its figures wait for the images.
     void loadQuizImages(restored.quizSource, quizLocation);
     pin.value = restored.pin;
     hostToken.value = restored.hostToken;
-    currentQuestionIndex.value = restored.currentQuestionIndex;
-    correctOrder.value = restored.correctOrder;
-    for (const [playerId, nickname] of restored.roster) roster.set(playerId, nickname);
-    for (const [playerId, score] of restored.scores) scores.set(playerId, score);
-    for (const [playerId, optionIndex] of restored.answers) answers.set(playerId, optionIndex);
-    for (const playerId of restored.removed ?? []) removed.add(playerId);
-    // Saved before players were tracked: everyone counts as present.
-    const seen = new Map(restored.lastSeen ?? []);
-    for (const playerId of roster.keys()) {
-      lastSeen.set(playerId, seen.get(playerId) ?? restored.currentQuestionIndex);
-    }
     lastSeq = restored.seq ?? 0;
-    status.value = restored.status as Status;
+    game.value = restoredGame;
     hostsHere = false;
     addDebugSecret(restored.hostToken);
     debugLog("session restored", {
@@ -697,8 +574,6 @@ if (restored?.hostToken) {
     });
   } catch (e) {
     debugLog("stored session unusable", { error: describeError(e) });
-    hostsHere = true;
-    quiz.value = null;
     clearHostSession();
   }
 } else if (restored) {
@@ -791,23 +666,46 @@ async function takeOverHere() {
   location.reload();
 }
 
-async function startQuestion(index: number) {
-  if (!quiz.value || !pin.value || !hostToken.value) return;
-
-  currentQuestionIndex.value = index;
-  answers.clear();
-  correctOrder.value = [];
-  questionStartedAt.value = Date.now();
-  status.value = "question";
-  debugLog("question started", { q: index, players: roster.size });
+/** "Frage starten" and "Nächste Frage". */
+async function startNextQuestion() {
+  const current = game.value;
+  if (!current || !nextQuestion(current)) return;
+  if (current.round.phase === "question") {
+    questionStartedAt.value = Date.now();
+    debugLog("question started", { q: current.round.index, players: current.roster.size });
+  } else {
+    debugLog("finished");
+  }
   await broadcast();
 }
 
-async function reveal() {
-  if (!quiz.value || status.value !== "question") return;
+/** "Antwort zeigen". */
+async function revealAnswer() {
+  const current = game.value;
+  if (!current || !mayReveal(current) || !reveal(current)) return;
+  const { round } = current;
+  if (isRevealed(round)) {
+    debugLog("revealed", {
+      q: round.index,
+      answers: round.answers.size,
+      players: current.roster.size,
+      correct: round.correctOrder.join(",") || "none",
+    });
+  }
+  await broadcast();
+}
+
+/** Whether to go ahead with a reveal: at once when everyone has answered;
+ * before that, only once the teacher has confirmed it while answers cannot
+ * reach this page, or while few of them are in. */
+function mayReveal(current: Game): boolean {
+  if (current.round.phase !== "question") return false;
+  const answered = current.round.answers.size;
+  const joined = current.roster.size;
+  const everyone = joined > 0 && answered >= joined;
   // While answers cannot reach this page, revealing would score the ones
   // still on their way as no answer at all. It stays the teacher's call.
-  if (!allAnswered.value && connectionTroubleAt(Date.now())) {
+  if (!everyone && connectionTroubleAt(Date.now())) {
     const go = window.confirm(
       "Die Verbindung ist gerade unterbrochen. Antworten, die noch unterwegs sind, würden nicht mehr gezählt. Trotzdem die Antwort zeigen?",
     );
@@ -816,62 +714,44 @@ async function reveal() {
       inbox: inboxLive.value,
       broadcast: broadcastLive.value,
     });
-    if (!go) return;
-  } else if (answeredCount.value < REVEAL_CONFIRM_SHARE * roster.size) {
-    const go = window.confirm(
-      `Erst ${answeredCount.value} von ${roster.size} haben geantwortet. Trotzdem die Antwort zeigen?`,
-    );
-    debugLog("early reveal", { confirmed: go, answers: answeredCount.value, players: roster.size });
-    if (!go) return;
+    return go;
   }
-  const q = quiz.value.questions[currentQuestionIndex.value];
-
-  // Map iteration is insertion order, so this is submission order.
-  correctOrder.value = [...answers.entries()]
-    .filter(([, optionIndex]) => optionIndex === q.correctIndex)
-    .map(([playerId]) => playerId);
-
-  scoresBeforeReveal.value = new Map(scores);
-  for (const playerId of roster.keys()) {
-    const points = pointsForReveal(correctOrder.value, playerId);
-    scores.set(playerId, (scores.get(playerId) ?? 0) + points);
+  if (answered < REVEAL_CONFIRM_SHARE * joined) {
+    const go = window.confirm(`Erst ${answered} von ${joined} haben geantwortet. Trotzdem die Antwort zeigen?`);
+    debugLog("early reveal", { confirmed: go, answers: answered, players: joined });
+    return go;
   }
+  return true;
+}
 
-  status.value = "reveal";
-  debugLog("revealed", {
-    q: currentQuestionIndex.value,
-    answers: answers.size,
-    players: roster.size,
-    correct: correctOrder.value.join(",") || "none",
-  });
+/** "Rangliste anzeigen", or "Endergebnis anzeigen" after the last question. */
+async function showStandings() {
+  const current = game.value;
+  if (!current || !afterReveal(current)) return;
+  // Shows the final standings. The session stays up, heartbeat included, so
+  // a phone that slept through this moment still gets its final rank.
+  debugLog(current.round.phase === "finished" ? "finished" : "leaderboard");
   await broadcast();
 }
 
-/** Takes a player out of the game, mainly for a rude nickname. Their device
- * learns it from the next snapshot and offers to join again under a new name,
- * starting from zero points. */
-async function removePlayer(playerId: string) {
-  const nickname = roster.get(playerId);
-  if (nickname === undefined) return;
+/** Takes a player out of the game, mainly for a rude nickname. */
+async function confirmRemove(playerId: string) {
+  const current = game.value;
+  const nickname = current?.roster.get(playerId);
+  if (!current || nickname === undefined) return;
   if (!window.confirm(`«${nickname}» aus dem Quiz entfernen? Die Person kann mit einem anderen Namen neu beitreten.`)) return;
   debugLog("player removed", { player: playerId });
-  removed.add(playerId);
-  roster.delete(playerId);
-  scores.delete(playerId);
-  answers.delete(playerId);
-  lastSeen.delete(playerId);
-  // The correct order stays as it is: everyone derives the points just won
-  // from their place in it, and those points are already in the scores.
+  removePlayer(current, playerId);
   await broadcast();
 }
 
-/** Folds a duplicate entry into the one its pupil plays on now: the points
- * move over, and the old entry is removed like any other. */
-async function mergePlayer(sourceId: string, targetId: string) {
-  const source = roster.get(sourceId);
-  const target = roster.get(targetId);
-  if (source === undefined || target === undefined || sourceId === targetId) return;
-  const points = scores.get(sourceId) ?? 0;
+/** Folds a duplicate entry into the one its pupil plays on now. */
+async function confirmMerge(sourceId: string, targetId: string) {
+  const current = game.value;
+  const source = current?.roster.get(sourceId);
+  const target = current?.roster.get(targetId);
+  if (!current || source === undefined || target === undefined || sourceId === targetId) return;
+  const points = current.scores.get(sourceId) ?? 0;
   if (
     !window.confirm(
       `«${source}» mit «${target}» zusammenführen? «${target}» erhält die ${points} Punkte von «${source}», und «${source}» wird entfernt.`,
@@ -879,33 +759,7 @@ async function mergePlayer(sourceId: string, targetId: string) {
   )
     return;
   debugLog("players merged", { from: sourceId, into: targetId, points });
-  correctOrder.value = mergePlayers(
-    {
-      roster,
-      scores,
-      answers,
-      correctOrder: correctOrder.value,
-      lastSeen,
-      removed,
-      scoresBefore: scoresBeforeReveal.value,
-    },
-    sourceId,
-    targetId,
-  );
-  await broadcast();
-}
-
-async function showLeaderboard() {
-  debugLog("leaderboard");
-  status.value = "leaderboard";
-  await broadcast();
-}
-
-/** Shows the final standings. The session stays up, heartbeat included, so
- * a phone that slept through this moment still gets its final rank. */
-async function finishQuiz() {
-  debugLog("finished");
-  status.value = "finished";
+  mergePlayer(current, sourceId, targetId);
   await broadcast();
 }
 
@@ -923,40 +777,12 @@ function closeQuiz() {
   endSession(sessionPin, token).catch((e) => console.warn("Releasing the pin failed", e));
 }
 
-// The last question has no next round to show a leaderboard before, so it
-// goes straight from reveal to the final screen.
-async function afterReveal() {
-  if (isLastQuestion.value) {
-    await finishQuiz();
-  } else {
-    await showLeaderboard();
-  }
-}
-
-async function nextOrFinish() {
-  if (!quiz.value) return;
-  if (currentQuestionIndex.value + 1 < quiz.value.questions.length) {
-    await startQuestion(currentQuestionIndex.value + 1);
-  } else {
-    await finishQuiz();
-  }
-}
-
 /** Discards all in-memory session state and returns to the quiz editor, as
  * if no session had ever been created. */
 function resetToSetup() {
-  status.value = "setup";
+  game.value = null;
   pin.value = null;
   hostToken.value = null;
-  quiz.value = null;
-  currentQuestionIndex.value = -1;
-  correctOrder.value = [];
-  roster.clear();
-  scores.clear();
-  scoresBeforeReveal.value = null;
-  answers.clear();
-  removed.clear();
-  lastSeen.clear();
   visits.clear();
   playersOpen.value = false;
   sessionRefused.value = false;
@@ -975,7 +801,7 @@ function endQuizNow() {
     "Quiz jetzt beenden? Alle Spieler:innen werden entfernt." +
     (unreachable ? " Die Verbindung ist gerade unterbrochen, darum erfahren sie vielleicht nichts davon." : "");
   // Confirm canceling as soon as players started to join
-  if (roster.size > 0 && !window.confirm(question)) return;
+  if (playerCount.value > 0 && !window.confirm(question)) return;
   debugLog("quiz aborted", { pin: pin.value, phase: status.value, unreachable });
   const [sessionPin, token] = [pin.value, hostToken.value];
   const farewell: SessionSnapshot = { phase: "finished", question_index: null, players: [], seq: nextSeq() };
@@ -1091,22 +917,22 @@ onUnmounted(() => {
         <HostLobby
           :pin="pin"
           :players="lobbyPlayers"
-          @start="startQuestion(0)"
+          @start="startNextQuestion"
           @end="endQuizNow"
-          @remove="removePlayer"
+          @remove="confirmRemove"
         />
       </div>
     </template>
 
-    <template v-else-if="status === 'question' && currentQuestion">
-      <QuestionCard :question="currentQuestion" :reveal-correct="false" />
-      <button type="button" :class="{ 'host-app__reveal--at-risk': revealAtRisk }" @click="reveal">
+    <template v-else-if="status === 'question' && question">
+      <QuestionCard :question="question" :reveal-correct="false" />
+      <button type="button" :class="{ 'host-app__reveal--at-risk': revealAtRisk }" @click="revealAnswer">
         {{ answerButtonLabel }}
       </button>
       <div class="host-app__footer">
         <div class="host-app__footer-side">
           <SoundToggle />
-          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ playerCount }})</button>
         </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
         <div class="host-app__footer-side host-app__footer-side--end">
@@ -1115,13 +941,13 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <template v-else-if="status === 'reveal' && currentQuestion">
-      <QuestionCard :question="currentQuestion" :reveal-correct="true" :counts="countsArray" />
-      <button type="button" @click="afterReveal">{{ isLastQuestion ? "Endergebnis anzeigen" : "Rangliste anzeigen" }}</button>
+    <template v-else-if="status === 'reveal' && question">
+      <QuestionCard :question="question" :reveal-correct="true" :counts="counts" />
+      <button type="button" @click="showStandings">{{ onLastQuestion ? "Endergebnis anzeigen" : "Rangliste anzeigen" }}</button>
       <div class="host-app__footer">
         <div class="host-app__footer-side">
           <SoundToggle />
-          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ playerCount }})</button>
         </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
         <div class="host-app__footer-side host-app__footer-side--end">
@@ -1133,18 +959,18 @@ onUnmounted(() => {
     <template v-else-if="status === 'leaderboard'">
       <div class="host-app__panel">
         <HostLeaderboard
-          :standings="standings"
-          :previous="previousStandings"
+          :standings="ranking"
+          :previous="previousRanking"
           :finished="false"
           @celebrate="playCheer"
           @settled="settleCheer"
         />
       </div>
-      <button type="button" @click="nextOrFinish">{{ isLastQuestion ? "Endergebnis anzeigen" : "Nächste Frage" }}</button>
+      <button type="button" @click="startNextQuestion">{{ onLastQuestion ? "Endergebnis anzeigen" : "Nächste Frage" }}</button>
       <div class="host-app__footer">
         <div class="host-app__footer-side">
           <SoundToggle />
-          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ playerCount }})</button>
         </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
         <div class="host-app__footer-side host-app__footer-side--end">
@@ -1155,13 +981,13 @@ onUnmounted(() => {
 
     <template v-else-if="status === 'finished'">
       <div class="host-app__panel">
-        <HostLeaderboard :standings="standings" :previous="previousStandings" :finished="true" />
+        <HostLeaderboard :standings="ranking" :previous="previousRanking" :finished="true" />
       </div>
       <button type="button" @click="closeQuiz">Quiz beenden</button>
       <div class="host-app__footer">
         <div class="host-app__footer-side">
           <SoundToggle />
-          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ roster.size }})</button>
+          <button type="button" class="host-app__end" @click="playersOpen = true">Spieler:innen ({{ playerCount }})</button>
         </div>
         <span class="host-app__progress">{{ questionProgress }}</span>
         <div class="host-app__footer-side host-app__footer-side--end">
@@ -1175,10 +1001,10 @@ onUnmounted(() => {
         playersOpen &&
         (status === 'question' || status === 'reveal' || status === 'leaderboard' || status === 'finished')
       "
-      :players="playerRows"
+      :players="players"
       @close="playersOpen = false"
-      @remove="removePlayer"
-      @merge="mergePlayer"
+      @remove="confirmRemove"
+      @merge="confirmMerge"
     />
   </div>
 </template>
